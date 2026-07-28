@@ -40,6 +40,42 @@ class Settings(BaseSettings):
         default=2.0, validation_alias="HEALTH_CHECK_TIMEOUT_SECONDS"
     )
 
+    # 哈希 pepper：邀请码/邮箱哈希/IP 哈希使用（token 哈希用纯 SHA-256，熵足够）。
+    # 只能通过环境变量提供；默认值仅限本地开发。
+    secret_pepper: str = Field(default="dev-only-pepper", validation_alias="SECRET_PEPPER")
+
+    # SMTP（本地开发用 Mailpit）
+    smtp_host: str = Field(default="localhost", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=1025, validation_alias="SMTP_PORT")
+    mail_from: str = Field(default="no-reply@careercopilot.local", validation_alias="MAIL_FROM")
+
+    # magic link
+    frontend_base_url: str = Field(
+        default="http://localhost:3000", validation_alias="FRONTEND_BASE_URL"
+    )
+    magic_link_ttl_seconds: int = Field(default=900, validation_alias="MAGIC_LINK_TTL_SECONDS")
+    magic_link_rate_limit_per_email: int = Field(
+        default=3, validation_alias="MAGIC_LINK_RATE_LIMIT_PER_EMAIL"
+    )
+    magic_link_rate_limit_per_ip: int = Field(
+        default=10, validation_alias="MAGIC_LINK_RATE_LIMIT_PER_IP"
+    )
+    magic_link_rate_window_seconds: int = Field(
+        default=900, validation_alias="MAGIC_LINK_RATE_WINDOW_SECONDS"
+    )
+
+    # 会话
+    session_cookie_name: str = Field(default="cc_session", validation_alias="SESSION_COOKIE_NAME")
+    session_ttl_seconds: int = Field(default=2_592_000, validation_alias="SESSION_TTL_SECONDS")
+    admin_session_ttl_seconds: int = Field(
+        default=43_200, validation_alias="ADMIN_SESSION_TTL_SECONDS"
+    )
+
+    # 账号注销恢复期（天）
+    account_deletion_grace_days: int = Field(
+        default=7, validation_alias="ACCOUNT_DELETION_GRACE_DAYS"
+    )
+
     @property
     def sync_database_url(self) -> str:
         """Alembic 等同步场景使用的 DSN（psycopg 驱动）。"""

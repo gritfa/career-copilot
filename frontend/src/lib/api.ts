@@ -63,6 +63,8 @@ export async function apiFetch<T>(
   const { json, headers, ...rest } = options;
 
   const init: RequestInit = {
+    // 会话基于 Cookie，跨端口开发时也需要带上凭据
+    credentials: "include",
     ...rest,
     headers: {
       Accept: "application/json",

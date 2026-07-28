@@ -42,6 +42,169 @@ a {
   text-decoration: none;
 }
 
+/* ---- 极简 UI 基础类（不引入组件库） ---- */
+
+.page {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.page h1 {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.page h2 {
+  font-size: 18px;
+  margin: 24px 0 8px;
+}
+
+.muted {
+  opacity: 0.65;
+  font-size: 14px;
+}
+
+.card {
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(127, 127, 127, 0.5);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.btn-danger {
+  color: #dc2626;
+  border-color: #dc2626;
+}
+
+.field {
+  display: block;
+  margin: 0 0 14px;
+}
+
+.field > span {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(127, 127, 127, 0.5);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.error-text {
+  color: #dc2626;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.notice {
+  border: 1px solid #d97706;
+  background: rgba(217, 119, 6, 0.08);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin: 12px 0;
+}
+
+.link {
+  text-decoration: underline;
+}
+
+/* 步骤条 */
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 24px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.steps li {
+  padding: 6px 10px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 6px;
+  opacity: 0.6;
+}
+
+.steps li.active {
+  opacity: 1;
+  border-color: #2563eb;
+  color: #2563eb;
+  font-weight: bold;
+}
+
+.steps li.done {
+  opacity: 1;
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+/* 二次确认弹层 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.dialog {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 420px;
+  width: 100%;
+}
+
+.dialog h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
 @media (prefers-color-scheme: dark) {
   html {
     color-scheme: dark;
