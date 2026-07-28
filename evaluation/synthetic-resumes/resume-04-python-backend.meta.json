@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-04-python-backend",
+  "persona_name": "王锐",
+  "target_role_family": "Python后端",
+  "years_of_experience": 2,
+  "city": "成都",
+  "education": "大专",
+  "seeded_flaws": [
+    "频繁跳槽：2 年内 3 家公司，单段最长仅 8 个月，且自评'长期稳定发展'与履历矛盾",
+    "量化数据缺失：全篇无一处具体数字指标，只有'明显提升''多个站点'等模糊描述",
+    "经历偏爬虫/CRUD，与'后端开发工程师'岗位的中间件、高并发要求存在深度差距"
+  ],
+  "strengths": [
+    "技术栈（Flask/Django + MySQL + Redis + Scrapy + Docker)与初级 Python 岗位要求匹配",
+    "有政务、教育、数据服务三类业务场景接触面",
+    "时间线连续无空窗，实习转正起步路径真实"
+  ]
+}

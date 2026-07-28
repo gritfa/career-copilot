@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-07-frontend",
+  "persona_name": "何雨桐",
+  "target_role_family": "前端",
+  "years_of_experience": 3,
+  "city": "深圳",
+  "education": "本科",
+  "seeded_flaws": [
+    "技能堆砌无项目支撑：技能栏列出 React、Angular、Flutter、Electron、React Native、Three.js，但全部项目经历只用到 Vue3 + uni-app 技术栈",
+    "单一公司单一业务线经验，缺少多环境适应性证据"
+  ],
+  "strengths": [
+    "量化数据充分（LCP 3.4s→1.6s、搭建时间 2 天→3 小时、1200+ 活动页）",
+    "低代码搭建器、表单渲染引擎属于前端高含金量项目类型",
+    "Vue3 + TS + 工程化 + 小程序的组合与深圳 B 端前端市场需求高度匹配",
+    "时间线自洽无空窗，有技术输出（博客）"
+  ]
+}

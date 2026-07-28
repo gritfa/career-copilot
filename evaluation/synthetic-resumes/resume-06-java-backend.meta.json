@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-06-java-backend",
+  "persona_name": "高子墨",
+  "target_role_family": "Java后端",
+  "years_of_experience": 3,
+  "city": "北京",
+  "education": "硕士",
+  "seeded_flaws": [
+    "2024.02 – 2024.07 存在 6 个月空窗期，简历未解释（仅在概况里用'扣除空窗'一笔带过）",
+    "技能与目标岗位部分错配：近 4 年经验中一半是大数据平台方向（Spark/Flink/Hive），纯 Java 业务后端经验实际只有约 2 年",
+    "第一段经历（衡数科技）1.5 年即离职，与第二段之间的转向原因未说明"
+  ],
+  "strengths": [
+    "量化数据完整（日均 6 万+ 查验、99.8% 成功率、2 万条/秒、延迟 30 秒内）",
+    "硕士学历 + 分布式研究背景，Kafka/Redis 等中间件经验可迁移",
+    "现公司经历包含规则引擎重构等有深度的产出"
+  ]
+}

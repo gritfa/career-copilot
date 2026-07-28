@@ -1,0 +1,68 @@
+# CareerCopilot 本地开发基础服务（Compose v2 语法，无 version 字段）
+# 用法：docker compose up -d / docker compose down
+# 密码等敏感值从根目录 .env 读取（参考 .env.example），均带开发默认值。
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: careercopilot-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-careercopilot}
+      POSTGRES_USER: ${POSTGRES_USER:-careercopilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-careercopilot_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-careercopilot} -d ${POSTGRES_DB:-careercopilot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: careercopilot-redis
+    # 开发默认无密码；设置 REDIS_PASSWORD 后自动启用 requirepass
+    command: >
+      sh -c 'if [ -n "$${REDIS_PASSWORD}" ]; then
+               exec redis-server --requirepass "$${REDIS_PASSWORD}";
+             else
+               exec redis-server;
+             fi'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD}\" ]; then redis-cli -a \"$${REDIS_PASSWORD}\" ping; else redis-cli ping; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: careercopilot-mailpit
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"   # SMTP
+      - "${MAILPIT_UI_PORT:-8025}:8025"     # Web UI: http://localhost:8025
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"          # 开发环境接受任意 SMTP 凭据
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/livez"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

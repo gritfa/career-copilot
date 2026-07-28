@@ -1,0 +1,20 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-05-java-backend",
+  "persona_name": "郑凯文",
+  "target_role_family": "Java后端",
+  "years_of_experience": 5,
+  "city": "广州",
+  "education": "本科",
+  "seeded_flaws": [
+    "量化数据几乎完全缺失：5 年经验却无 QPS/延迟/订单量/故障率等任何数字，'明显减少''稳定运行'均不可验证",
+    "项目描述职责化：大量'负责''参与''维护'的职责罗列，缺少个人产出与难点决策",
+    "技能栏写'精通'Spring Cloud 全家桶，但项目描述看不出 Sentinel/Seata 的实际落地场景，存在堆砌嫌疑"
+  ],
+  "strengths": [
+    "5 年电商中台 + 物流中台连续经验，业务场景含金量高",
+    "技能画像与 Java 高级岗市场要求吻合（JVM/JUC + Spring Cloud + 分库分表 + MQ）",
+    "时间线自洽无空窗，两段跳槽节奏合理（3 年 + 2 年）",
+    "有代码评审与带人经验，符合组长方向"
+  ]
+}

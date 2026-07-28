@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-02-ai-app",
+  "persona_name": "苏晚晴",
+  "target_role_family": "AI应用开发",
+  "years_of_experience": 1,
+  "city": "杭州",
+  "education": "本科",
+  "seeded_flaws": [
+    "技能堆砌无项目支撑：罗列 8 个 LLM 框架、5 个向量库、微调/推理全家桶，实际项目只用到 Dify、LangChain、Chroma 和简单 API 调用",
+    "项目深度不足：工作项目为平台配置类工作，其余为毕设/课程级别，与'大模型应用工程师'岗位要求存在深度错配",
+    "全部项目缺少量化结果数据"
+  ],
+  "strengths": [
+    "计算机科班本科 + 竞赛经历，基础素质可信",
+    "时间线自洽，应届入职后无空窗",
+    "有真实生产环境（Dify 知识库机器人）的接触经验"
+  ]
+}

@@ -1,0 +1,44 @@
+# ---------- 环境变量 / 密钥 ----------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ---------- Python (uv) ----------
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ---------- Node / Next.js ----------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# ---------- macOS ----------
+.DS_Store
+._*
+
+# ---------- IDE ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---------- 临时文件 / 日志 ----------
+*.log
+*.tmp
+tmp/
+.cache/

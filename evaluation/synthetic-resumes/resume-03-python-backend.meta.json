@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-03-python-backend",
+  "persona_name": "陈昊然",
+  "target_role_family": "Python后端",
+  "years_of_experience": 4,
+  "city": "上海",
+  "education": "本科",
+  "seeded_flaws": [
+    "2024.04 – 2024.11 存在约 8 个月空窗期，简历中完全未提及、未解释",
+    "技能清单含错别字/混排（'факtory_boy'），拟真的粗心型笔误",
+    "Kafka 仅'使用级'但列在中间件栏，易被追问深度"
+  ],
+  "strengths": [
+    "两段经历均有扎实量化数据（P95 480ms→160ms、日订单 5 万→40 万、覆盖率 20%→65%）",
+    "技能组合是标准 Python 后端市场画像（FastAPI/Django + MySQL/PG + Redis + Celery + Docker）",
+    "有单体拆分、幂等限流、灰度迁移等高级后端经验"
+  ]
+}

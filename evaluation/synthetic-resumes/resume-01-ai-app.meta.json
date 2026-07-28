@@ -1,0 +1,18 @@
+{
+  "synthetic": true,
+  "resume_id": "resume-01-ai-app",
+  "persona_name": "林承宇",
+  "target_role_family": "AI应用开发",
+  "years_of_experience": 3,
+  "city": "北京",
+  "education": "硕士",
+  "seeded_flaws": [
+    "第二、三个项目量化数据缺失，只有'显著降低''更加规范'等模糊表述",
+    "仅一段工作经历、单一公司环境，缺少跨团队/大规模系统经验佐证"
+  ],
+  "strengths": [
+    "RAG 链路完整且第一个项目量化扎实（采纳率 61%→83%、JSON 有效率 99.6%）",
+    "技能组合与 AI 应用岗市场要求高度吻合（FastAPI + RAG + 评测 + 成本控制）",
+    "硕士学历 + 时间线自洽无空窗"
+  ]
+}
