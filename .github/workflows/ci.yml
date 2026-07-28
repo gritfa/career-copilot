@@ -36,9 +36,19 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      mailpit:
+        image: axllent/mailpit
+        ports:
+          - 1025:1025
+          - 8025:8025
     env:
       DATABASE_URL: postgresql+psycopg://careercopilot:careercopilot_dev@localhost:5432/careercopilot
       REDIS_URL: redis://localhost:6379/0
+      # 集成测试连 CI 服务容器（本机默认值是 55432/56379，见 DEVELOPMENT.md）
+      TEST_PG_PORT: "5432"
+      TEST_REDIS_URL: redis://localhost:6379/1
+      TEST_MAILPIT_API: http://localhost:8025/api/v1
+      TEST_SMTP_PORT: "1025"
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +105,8 @@ jobs:
         with:
           fetch-depth: 0   # gitleaks 需要完整历史
 
+      # 不用 gitleaks-action：组织仓库要求付费 license；直接跑官方镜像等效扫描
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source /repo --no-banner --redact -v

@@ -25,8 +25,8 @@ from app.core.config import get_settings
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
-PG_HOST = "localhost"
-PG_PORT = 55432
+PG_HOST = os.getenv("TEST_PG_HOST", "localhost")
+PG_PORT = int(os.getenv("TEST_PG_PORT", "55432"))  # 本机 5432 被占，见 DEVELOPMENT.md；CI 传 5432
 PG_USER = "careercopilot"
 PG_PASSWORD = "careercopilot_dev"
 TEST_DB = "careercopilot_test"
@@ -40,8 +40,9 @@ TEST_SYNC_DSN = (
 ADMIN_SYNC_DSN = (
     f"host={PG_HOST} port={PG_PORT} user={PG_USER} password={PG_PASSWORD} dbname=careercopilot"
 )
-TEST_REDIS_URL = "redis://localhost:56379/1"
-MAILPIT_API = "http://localhost:8025/api/v1"
+TEST_REDIS_URL = os.getenv("TEST_REDIS_URL", "redis://localhost:56379/1")
+MAILPIT_API = os.getenv("TEST_MAILPIT_API", "http://localhost:8025/api/v1")
+SMTP_PORT = os.getenv("TEST_SMTP_PORT", "1025")
 
 TABLES = ("audit_events", "consents", "sessions", "auth_tokens", "invites", "users")
 
@@ -71,7 +72,7 @@ def real_env(prepare_test_db, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("REDIS_URL", TEST_REDIS_URL)
     monkeypatch.setenv("SMTP_HOST", "localhost")
-    monkeypatch.setenv("SMTP_PORT", "1025")
+    monkeypatch.setenv("SMTP_PORT", SMTP_PORT)
     monkeypatch.setenv("ENV", "test")
     get_settings.cache_clear()
     yield
