@@ -126,6 +126,27 @@ class Settings(BaseSettings):
         default=20, validation_alias="DAILY_RECOMMENDATION_LIMIT"
     )
 
+    # ---- 阶段 6：Model Gateway / 单模型标准分析 ----
+    # DeepSeek API key：为空时使用确定性合成分析 Adapter，
+    # deepseek_generation / standard_analysis 能力保持 not_verified。
+    deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
+    deepseek_base_url: str = Field(
+        default="https://api.deepseek.com/v1", validation_alias="DEEPSEEK_BASE_URL"
+    )
+    # 具体模型 ID 走配置 + allowlist 管理，不写死不可追踪的 latest（docs/07 第 7.2 节）
+    deepseek_model_id: str = Field(default="deepseek-chat", validation_alias="DEEPSEEK_MODEL_ID")
+    llm_model_allowlist: list[str] = Field(
+        default=["deepseek-chat", "synthetic-analysis@1"],
+        validation_alias="LLM_MODEL_ALLOWLIST",
+    )
+    llm_timeout_seconds: float = Field(default=60.0, validation_alias="LLM_TIMEOUT_SECONDS")
+    llm_max_retries: int = Field(default=2, validation_alias="LLM_MAX_RETRIES")
+    llm_max_output_tokens: int = Field(default=2048, validation_alias="LLM_MAX_OUTPUT_TOKENS")
+    # 每账号每日手动深度分析次数（docs/07 第 8.3 节；自动触发按 ADR-001 D2 推迟）
+    analysis_manual_daily_limit: int = Field(
+        default=3, validation_alias="ANALYSIS_MANUAL_DAILY_LIMIT"
+    )
+
     @property
     def sync_database_url(self) -> str:
         """Alembic 等同步场景使用的 DSN（psycopg 驱动）。"""

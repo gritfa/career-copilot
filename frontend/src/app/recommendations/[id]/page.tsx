@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
+import { AnalysisSection } from "@/components/AnalysisSection";
 import { FeedbackActions } from "@/components/RecommendationCard";
 import {
   HARD_STATUS_META,
@@ -39,7 +40,8 @@ import {
 /**
  * 岗位详情与最终报告（docs/05 第 7 节区块顺序）：
  * 1 原始岗位信息与全部来源链接 → 2 硬条件结果 → 3 总分与分项分数 →
- * 4 匹配证据 → 5 关键缺口 → 6 风险信号 → 深度分析占位 → 反馈 → 定制简历（阶段 7）。
+ * 4 匹配证据 → 5 关键缺口 → 6 风险信号 → 标准分析（阶段 6，单模型）→ 反馈 →
+ * 定制简历（阶段 7）。
  * 证据缺失一律显示「信息不足」，不显示编造内容（docs/05 第 14 节）。
  */
 
@@ -124,10 +126,7 @@ function DetailBody({ rec }: { rec: Recommendation }) {
       <GapsSection rec={rec} />
       <RisksSection rec={rec} />
 
-      <h2>多 Agent 深度分析</h2>
-      <div className="card">
-        <p className="muted">多 Agent 深度分析将在后续版本开放。</p>
-      </div>
+      <AnalysisSection recommendationId={rec.id} />
 
       <h2>反馈</h2>
       <div className="card">

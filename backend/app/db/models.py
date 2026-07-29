@@ -1138,3 +1138,73 @@ class UsageLedger(Base):
         Index("ix_usage_ledger_user_occurred", "user_id", "occurred_at"),
         Index("ix_usage_ledger_provider_occurred", "provider", "occurred_at"),
     )
+
+
+# ---------------- 阶段 6：单模型标准分析（docs/03 第 7 节 agent_runs） ----------------
+
+AGENT_RUN_STATUSES = ("queued", "analyzing", "validating", "completed", "failed")
+AGENT_RUN_TRIGGERS = ("auto", "manual")
+
+
+class AgentRun(Base):
+    """分析任务：只保存结构化最终结果与状态，绝不保存模型思维链/内部对话。
+
+    ADR-001 裁剪：MVP 为单模型标准分析（graph_version=single_model_v1），
+    LangGraph 多 Agent 推迟；表结构按 docs/03 预留 model_map_json 等字段。
+    """
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    recommendation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recommendations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 冗余 user_id：配额（每日手动 3 次）按账号统计（docs/07 第 8.3 节）
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    graph_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model_map_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    current_stage: Mapped[str | None] = mapped_column(String(32))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    final_report_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    cost_tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_amount: Mapped[Any] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'analyzing', 'validating', 'completed', 'failed')",
+            name="ck_agent_runs_status",
+        ),
+        CheckConstraint("trigger IN ('auto', 'manual')", name="ck_agent_runs_trigger"),
+        CheckConstraint(
+            "cost_tokens_in >= 0", name="ck_agent_runs_tokens_in_nonnegative"
+        ),
+        CheckConstraint(
+            "cost_tokens_out >= 0", name="ck_agent_runs_tokens_out_nonnegative"
+        ),
+        # 完成必须有报告，失败绝不留报告（失败不得伪装完成）
+        CheckConstraint(
+            "(status = 'completed') = (final_report_json IS NOT NULL)",
+            name="ck_agent_runs_report_iff_completed",
+        ),
+        Index("ix_agent_runs_recommendation", "recommendation_id", "created_at"),
+        Index("ix_agent_runs_user_created", "user_id", "created_at"),
+    )

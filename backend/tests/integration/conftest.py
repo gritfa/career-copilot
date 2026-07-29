@@ -45,6 +45,8 @@ MAILPIT_API = os.getenv("TEST_MAILPIT_API", "http://localhost:8025/api/v1")
 SMTP_PORT = os.getenv("TEST_SMTP_PORT", "1025")
 
 TABLES = (
+    # 阶段 6：标准分析
+    "agent_runs",
     # 阶段 5：匹配 / 推荐 / 向量 / 费用账本
     "user_feedback",
     "match_components",

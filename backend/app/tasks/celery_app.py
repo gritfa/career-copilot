@@ -34,7 +34,12 @@ def create_celery_app() -> Celery:
         task_soft_time_limit=240,
         task_always_eager=settings.celery_task_always_eager,
         task_eager_propagates=False,
-        imports=("app.resumes.tasks", "app.jobs.tasks", "app.matching.tasks"),
+        imports=(
+            "app.resumes.tasks",
+            "app.jobs.tasks",
+            "app.matching.tasks",
+            "app.agents.tasks",
+        ),
         broker_connection_retry_on_startup=True,
         # 岗位来源：全局每天一次（docs/06 第 5 节）；各来源在任务内随机抖动错峰
         beat_schedule={

@@ -13,6 +13,7 @@ EXPECTED_CAPABILITIES = {
     "pdf_export",
     "email_magic_link",
     "matching_basic",
+    "standard_analysis",
 }
 
 # 阶段 3：本机真实解析集成测试通过的两项 ready；
@@ -20,6 +21,9 @@ EXPECTED_CAPABILITIES = {
 # PG(pgvector)/Redis 容器集成测试验证 → ready。aliyun_embedding 无 key，
 # 保持 not_verified。
 READY_CAPABILITIES = {"resume_parse_pdf", "resume_parse_docx", "matching_basic"}
+
+# 阶段 6（ADR-001 裁剪）：standard_analysis 管道经集成测试打通，但无真实
+# DEEPSEEK_API_KEY（确定性合成 Adapter 产出，报告标 not_verified）→ 保持 not_verified。
 
 # 阶段 4：BOSS 无允许的自动访问方式，能力如实标 import_only（绝不显示采集正常）
 IMPORT_ONLY_CAPABILITIES = {"job_source:boss"}

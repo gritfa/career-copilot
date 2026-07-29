@@ -30,6 +30,9 @@ _ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
 # 阶段 5：matching_basic（硬条件 + 确定性向量召回 + 规则评分 + 反馈）经本机
 # 真实 PG(pgvector)/Redis 容器集成测试验证 → ready；
 # aliyun_embedding 无真实 API key，保持 not_verified（当前用确定性合成 Adapter）。
+# 阶段 6（ADR-001 裁剪）：standard_analysis 管道（Model Gateway + 单模型标准分析）
+# 经集成测试打通，但无真实 DEEPSEEK_API_KEY，只有确定性合成 Adapter 产出
+# （报告如实标注 not_verified）→ 能力保持 not_verified；多 Agent（LangGraph）推迟。
 CAPABILITIES: dict[str, str] = {
     "job_source:fixture_a": "not_verified",
     "job_source:fixture_b": "not_verified",
@@ -38,6 +41,7 @@ CAPABILITIES: dict[str, str] = {
     "qwen_fallback": "not_verified",
     "aliyun_embedding": "not_verified",
     "matching_basic": "ready",
+    "standard_analysis": "not_verified",
     "resume_parse_pdf": "ready",
     "resume_parse_docx": "ready",
     "docx_export": "not_verified",
