@@ -157,6 +157,18 @@ class Settings(BaseSettings):
         default=900, validation_alias="RESUME_EXPORT_TTL_SECONDS"
     )
 
+    # ---- 阶段 8：数据主体权利 / 管理运维（ADR-001 减配版） ----
+    # 数据导出 ZIP 保留时长（秒）：短时下载、过期删除（docs/08 第 9 节）
+    data_export_ttl_seconds: int = Field(
+        default=3600, validation_alias="DATA_EXPORT_TTL_SECONDS"
+    )
+    # 数据导出的"重新认证"窗口：会话创建（登录）距今不超过该秒数才允许发起导出
+    data_export_reauth_window_seconds: int = Field(
+        default=1800, validation_alias="DATA_EXPORT_REAUTH_WINDOW_SECONDS"
+    )
+    # 每用户每日数据导出上限（防资源滥用，docs/04 第 11 节）
+    data_export_daily_limit: int = Field(default=3, validation_alias="DATA_EXPORT_DAILY_LIMIT")
+
     @property
     def sync_database_url(self) -> str:
         """Alembic 等同步场景使用的 DSN（psycopg 驱动）。"""

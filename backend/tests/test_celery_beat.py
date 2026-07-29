@@ -16,3 +16,16 @@ def test_daily_job_source_sync_registered_in_beat():
 def test_job_tasks_registered():
     assert "jobs.sync_source" in celery_app.tasks
     assert "jobs.sync_all_sources" in celery_app.tasks
+
+
+def test_privacy_purge_and_cleanup_registered_in_beat():
+    """阶段 8：注销硬删扫描 + 过期导出清理必须在 beat 注册（每小时）。"""
+    schedule = celery_app.conf.beat_schedule
+    assert schedule["hourly-purge-due-accounts"]["task"] == "privacy.purge_due_accounts"
+    assert (
+        schedule["hourly-cleanup-expired-export-files"]["task"]
+        == "privacy.cleanup_expired_export_files"
+    )
+    assert "privacy.generate_data_export" in celery_app.tasks
+    assert "privacy.purge_due_accounts" in celery_app.tasks
+    assert "privacy.cleanup_expired_export_files" in celery_app.tasks

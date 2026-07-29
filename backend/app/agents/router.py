@@ -27,8 +27,8 @@ from app.agents.schemas import (
 from app.agents.service import provider_verified
 from app.agents.tasks import run_standard_analysis_task
 from app.auth.deps import AuthContext, require_active_user, require_user
-from app.core.config import get_settings
 from app.core.errors import AppError
+from app.core.quotas import effective_limit
 from app.db.models import AgentRun, Recommendation, SearchPlan
 from app.db.session import get_db
 from app.integrations.llm_gateway import get_llm_adapter
@@ -106,7 +106,8 @@ async def trigger_analysis(
         return _run_out(active)
 
     # 每日手动额度（UTC 日界，docs/07 第 8.3 节；自动触发按 ADR-001 推迟）
-    settings = get_settings()
+    # 支持每用户额度覆盖（阶段 8 CLI 管理命令写入）
+    limit = effective_limit(ctx.user.quota_overrides_json, "analysis_manual_daily")
     day_start = datetime.combine(datetime.now(UTC).date(), dtime.min, tzinfo=UTC)
     used = (
         await db.execute(
@@ -119,12 +120,12 @@ async def trigger_analysis(
             )
         )
     ).scalar_one()
-    if used >= settings.analysis_manual_daily_limit:
+    if used >= limit:
         raise AppError(
             code="RATE_LIMITED",
             message="今日手动深度分析次数已用完，明天再试",
             status_code=429,
-            details={"limit": settings.analysis_manual_daily_limit, "used": int(used)},
+            details={"limit": limit, "used": int(used)},
         )
 
     adapter = get_llm_adapter()

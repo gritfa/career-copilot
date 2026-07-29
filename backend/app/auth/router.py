@@ -224,6 +224,24 @@ async def verify_magic_link(
         await db.execute(select(User).where(User.email_normalized == email_normalized))
     ).scalar_one_or_none()
 
+    # 封禁账号（阶段 8）：不允许换取新会话
+    if user is not None and user.status == "suspended":
+        await record_audit(
+            db,
+            actor_type="user",
+            actor_id=user.id,
+            action="user_login",
+            result="denied",
+            reason_code="ACCOUNT_SUSPENDED",
+            ip_hash=ip_h,
+        )
+        await db.commit()
+        raise AppError(
+            code="ACCOUNT_SUSPENDED",
+            message="账号已被封禁，如有疑问请联系支持",
+            status_code=403,
+        )
+
     created = False
     if user is None:
         # 原子消耗邀请码：行级 UPDATE 带 used_count < max_uses 条件，防并发超用

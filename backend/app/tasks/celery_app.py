@@ -40,6 +40,7 @@ def create_celery_app() -> Celery:
             "app.matching.tasks",
             "app.agents.tasks",
             "app.tailoring.tasks",
+            "app.privacy.tasks",
         ),
         broker_connection_retry_on_startup=True,
         # 岗位来源：全局每天一次（docs/06 第 5 节）；各来源在任务内随机抖动错峰
@@ -52,6 +53,16 @@ def create_celery_app() -> Celery:
             "daily-generate-recommendations": {
                 "task": "matching.generate_all_recommendations",
                 "schedule": crontab(hour=4, minute=30),
+            },
+            # 注销硬删：每小时扫描宽限期到期账号（失败下轮自动重试）
+            "hourly-purge-due-accounts": {
+                "task": "privacy.purge_due_accounts",
+                "schedule": crontab(minute=10),
+            },
+            # 过期导出文件清理（数据导出 ZIP + 简历导出）：短时下载、过期删除
+            "hourly-cleanup-expired-export-files": {
+                "task": "privacy.cleanup_expired_export_files",
+                "schedule": crontab(minute=40),
             },
         },
     )

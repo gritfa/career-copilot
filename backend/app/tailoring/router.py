@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import AuthContext, require_active_user, require_user
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.core.quotas import effective_limit
 from app.db.models import (
     ProfileFact,
     Recommendation,
@@ -188,8 +189,8 @@ async def create_resume_draft(
     if active is not None:
         return _version_out(active)
 
-    # 每日新定制版本额度（UTC 日界；编辑/确认/重新导出不计数）
-    settings = get_settings()
+    # 每日新定制版本额度（UTC 日界；编辑/确认/重新导出不计数；支持每用户覆盖）
+    limit = effective_limit(ctx.user.quota_overrides_json, "resume_tailor_daily")
     day_start = datetime.combine(datetime.now(UTC).date(), dtime.min, tzinfo=UTC)
     used = (
         await db.execute(
@@ -202,12 +203,12 @@ async def create_resume_draft(
             )
         )
     ).scalar_one()
-    if used >= settings.resume_tailor_daily_limit:
+    if used >= limit:
         raise AppError(
             code="RATE_LIMITED",
             message="今日新建定制简历数量已用完，明天再试（编辑与导出不受限）",
             status_code=429,
-            details={"limit": settings.resume_tailor_daily_limit, "used": int(used)},
+            details={"limit": limit, "used": int(used)},
         )
 
     adapter = get_tailor_adapter()

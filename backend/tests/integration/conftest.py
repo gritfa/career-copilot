@@ -45,6 +45,9 @@ MAILPIT_API = os.getenv("TEST_MAILPIT_API", "http://localhost:8025/api/v1")
 SMTP_PORT = os.getenv("TEST_SMTP_PORT", "1025")
 
 TABLES = (
+    # 阶段 8：数据导出 / 注销硬删
+    "data_exports",
+    "account_purge_runs",
     # 阶段 7：定制简历版本 / 导出
     "resume_exports",
     "resume_versions",

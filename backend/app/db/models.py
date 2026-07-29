@@ -36,7 +36,7 @@ from app.db.base import Base
 # ---- 受控取值（用 CheckConstraint 而非 PG enum，便于演进） ----
 
 USER_ROLES = ("user", "admin")
-USER_STATUSES = ("active", "deletion_pending")
+USER_STATUSES = ("active", "suspended", "deletion_pending")
 CONSENT_PROVIDERS = ("deepseek", "qwen", "analytics", "support")
 CONSENT_SCOPES = ("full_resume", "deidentified", "profile_fields")
 ACTOR_TYPES = ("user", "admin", "system", "anonymous")
@@ -107,6 +107,9 @@ class User(Base):
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 阶段 8：封禁（CLI 管理命令写入）与每用户额度覆盖（None = 用全局默认）
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quota_overrides_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
@@ -116,7 +119,9 @@ class User(Base):
 
     __table_args__ = (
         CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
-        CheckConstraint("status IN ('active', 'deletion_pending')", name="ck_users_status"),
+        CheckConstraint(
+            "status IN ('active', 'suspended', 'deletion_pending')", name="ck_users_status"
+        ),
     )
 
 
@@ -1344,4 +1349,93 @@ class AgentRun(Base):
         ),
         Index("ix_agent_runs_recommendation", "recommendation_id", "created_at"),
         Index("ix_agent_runs_user_created", "user_id", "created_at"),
+    )
+
+
+# ---------------- 阶段 8：数据主体权利（导出 / 注销硬删）（docs/08 第 9 节） ----------------
+
+DATA_EXPORT_STATUSES = ("queued", "running", "succeeded", "failed")
+PURGE_RUN_STATUSES = ("running", "succeeded", "failed")
+
+
+class DataExport(Base):
+    """用户全量数据导出（ZIP = JSON + 自有文件）：异步生成、短时下载、过期清理。
+
+    storage_key 只含 UUID；下载走限时 HMAC 签名链接（复用阶段 7 模式）。
+    """
+
+    __tablename__ = "data_exports"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    storage_key: Mapped[str | None] = mapped_column(String(255), unique=True)
+    file_sha256: Mapped[str | None] = mapped_column(String(64))
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    file_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed')",
+            name="ck_data_exports_status",
+        ),
+        # 成功必须有文件三元组；失败绝不留 key（不伪装完成）
+        CheckConstraint(
+            "NOT (status = 'succeeded' AND (storage_key IS NULL "
+            "OR file_sha256 IS NULL OR expires_at IS NULL))",
+            name="ck_data_exports_succeeded_has_file",
+        ),
+        CheckConstraint(
+            "NOT (status = 'failed' AND storage_key IS NOT NULL)",
+            name="ck_data_exports_failed_no_file",
+        ),
+        Index("ix_data_exports_user_created", "user_id", "created_at"),
+    )
+
+
+class AccountPurgeRun(Base):
+    """注销硬删任务与可验证清单：任一子项失败整体不得标成功，可安全重试。
+
+    user_id 不建 FK：用户行删除后本表仍保留删除凭证（manifest 只含计数，无 PII）。
+    """
+
+    __tablename__ = "account_purge_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 可验证清单：各类数据删除计数（表行数 / 文件数 / 向量数），绝无正文或联系方式
+    manifest_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed')",
+            name="ck_account_purge_runs_status",
+        ),
+        CheckConstraint("attempts >= 0", name="ck_account_purge_runs_attempts_nonnegative"),
+        # 成功必须有完成时间（失败可重试，不得伪装成功）
+        CheckConstraint(
+            "NOT (status = 'succeeded' AND completed_at IS NULL)",
+            name="ck_account_purge_runs_succeeded_completed",
+        ),
+        Index("ix_account_purge_runs_user", "user_id"),
+        Index("ix_account_purge_runs_status", "status"),
     )

@@ -62,6 +62,13 @@ async def get_auth_context(
         raise _unauthorized()
 
     session, user = row
+    # 封禁账号（阶段 8 CLI）：即使会话尚未撤销也一律拒绝
+    if user.status == "suspended":
+        raise AppError(
+            code="ACCOUNT_SUSPENDED",
+            message="账号已被封禁，如有疑问请联系支持",
+            status_code=403,
+        )
     session.last_seen_at = now
     user.last_active_at = now
     await db.commit()
