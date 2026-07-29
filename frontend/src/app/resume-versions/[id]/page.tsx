@@ -48,8 +48,22 @@ export default function ResumeVersionPage() {
   }, [id]);
 
   useEffect(() => {
-    if (id) void reload();
-  }, [id, reload]);
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const version = await api.get<ResumeVersion>(
+          `/resume-versions/${encodeURIComponent(id)}`,
+        );
+        if (!cancelled) setState({ kind: "ready", version });
+      } catch (err) {
+        if (!cancelled) setState({ kind: "error", reason: handleApiError(err) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   return (
     <main className="page">

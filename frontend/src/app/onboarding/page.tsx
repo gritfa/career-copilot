@@ -98,8 +98,16 @@ export default function OnboardingPage() {
     setConsentError((prev) => ({ ...prev, [provider]: "" }));
     setConsentState((prev) => ({ ...prev, [provider]: "loading" }));
     try {
-      // 契约要求：单一 provider + scope，不做批量勾选
-      await api.post("/consents", { provider, scope: "full_resume" });
+      // 契约要求：单一 provider + scope + 当前告知版本，不做批量勾选。
+      // notice_version 必须与后端当前告知版本一致（阶段 9 验收发现缺失会 422）
+      const notices = await api.get<{
+        providers: Record<string, { notice_version: string }>;
+      }>("/consents/notices");
+      await api.post("/consents", {
+        provider,
+        scope: "full_resume",
+        notice_version: notices.providers[provider]?.notice_version,
+      });
       setConsentState((prev) => ({ ...prev, [provider]: "granted" }));
     } catch (err) {
       setConsentState((prev) => ({ ...prev, [provider]: "idle" }));

@@ -36,14 +36,13 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // 1) 校验邀请码（不暴露剩余次数）
-      await api.post("/auth/invites/validate", { invite_code: code });
-      // 2) 发送邮箱免密登录链接（需年龄确认与邀请码）
+      // 1) 校验邀请码（不暴露剩余次数）；后端契约字段为 code（docs/04）
+      await api.post("/auth/invites/validate", { code });
+      // 2) 发送邮箱免密登录链接（需年龄确认与邀请码）；后端契约字段为 age_attested
       await api.post("/auth/magic-links", {
         email: mail,
         invite_code: code,
-        age_confirmed: true,
-        terms_accepted: true,
+        age_attested: true,
       });
       setSent(true);
     } catch (err) {

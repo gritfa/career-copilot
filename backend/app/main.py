@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.admin.router import router as admin_router
 from app.agents.router import router as agents_router
@@ -44,6 +45,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.add_middleware(RequestIDMiddleware)
+    # 浏览器前端（Next.js，localhost:3000）跨端口调用 API：只放行配置的前端来源并
+    # 允许携带会话 cookie（阶段 9 验收发现缺失，浏览器端登录会被 CORS 拦截）
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.frontend_base_url.rstrip("/")],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     register_exception_handlers(app)
     app.include_router(health_router)
 
