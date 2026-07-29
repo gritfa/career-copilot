@@ -12,6 +12,9 @@ EXPECTED_CAPABILITIES = {
     "email_magic_link",
 }
 
+# 阶段 3：只有本机真实解析集成测试通过的两项才允许 ready
+READY_CAPABILITIES = {"resume_parse_pdf", "resume_parse_docx"}
+
 
 async def test_live_returns_200_without_dependencies(client):
     resp = await client.get("/health/live")
@@ -20,14 +23,20 @@ async def test_live_returns_200_without_dependencies(client):
     assert resp.headers["X-Request-ID"].startswith("req_")
 
 
-async def test_capabilities_all_not_verified(client):
+async def test_capabilities_only_verified_ready(client):
     resp = await client.get("/health/capabilities")
     assert resp.status_code == 200
     caps = resp.json()["capabilities"]
     assert set(caps) == EXPECTED_CAPABILITIES
-    # 阶段 1 硬约束：任何能力都不允许标为 ready
+    # 硬约束：未经真实验证的能力（deepseek/qwen/embedding/来源/导出/邮件）
+    # 绝不允许标 ready；已验证的解析能力必须如实标 ready。
     for name, status in caps.items():
-        assert status == "not_verified", f"capability {name} must be not_verified, got {status}"
+        if name in READY_CAPABILITIES:
+            assert status == "ready", f"capability {name} verified in phase 3, got {status}"
+        else:
+            assert status == "not_verified", (
+                f"capability {name} must be not_verified, got {status}"
+            )
 
 
 async def test_ready_returns_503_when_dependencies_down(client):

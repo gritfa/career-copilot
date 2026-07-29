@@ -17,6 +17,10 @@ dependencies = [
     "structlog>=24.4",
     "aiosmtplib>=5.1.2",
     "email-validator>=2.3.0",
+    "celery>=5.4",
+    "pypdf>=5.1",
+    "python-docx>=1.1",
+    "python-multipart>=0.0.18",
 ]
 
 [dependency-groups]
@@ -26,6 +30,7 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
+    "reportlab>=4.2",
 ]
 
 [build-system]

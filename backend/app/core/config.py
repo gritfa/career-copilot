@@ -76,6 +76,34 @@ class Settings(BaseSettings):
         default=7, validation_alias="ACCOUNT_DELETION_GRACE_DAYS"
     )
 
+    # ---- 阶段 3：简历上传 / 存储 / 解析 ----
+    # 存储后端：local（backend/var/storage）；oss 为留待真实集成的接口
+    storage_backend: Literal["local", "oss"] = Field(
+        default="local", validation_alias="STORAGE_BACKEND"
+    )
+    # 本地存储根目录；相对路径相对 backend/ 解析
+    storage_dir: str = Field(default="var/storage", validation_alias="STORAGE_DIR")
+    resume_max_size_bytes: int = Field(
+        default=10 * 1024 * 1024, validation_alias="RESUME_MAX_SIZE_BYTES"
+    )
+    resume_max_pages: int = Field(default=30, validation_alias="RESUME_MAX_PAGES")
+    # DOCX 解压缩炸弹防护：解压总量与压缩比上限
+    docx_max_uncompressed_bytes: int = Field(
+        default=50 * 1024 * 1024, validation_alias="DOCX_MAX_UNCOMPRESSED_BYTES"
+    )
+    docx_max_compression_ratio: float = Field(
+        default=100.0, validation_alias="DOCX_MAX_COMPRESSION_RATIO"
+    )
+    upload_session_ttl_seconds: int = Field(
+        default=3600, validation_alias="UPLOAD_SESSION_TTL_SECONDS"
+    )
+    # 解析（文本提取 + 规则抽取）超时保护
+    parse_timeout_seconds: float = Field(default=30.0, validation_alias="PARSE_TIMEOUT_SECONDS")
+    # Celery：测试可置 eager；任务代码仍是真实 Celery 任务
+    celery_task_always_eager: bool = Field(
+        default=False, validation_alias="CELERY_TASK_ALWAYS_EAGER"
+    )
+
     @property
     def sync_database_url(self) -> str:
         """Alembic 等同步场景使用的 DSN（psycopg 驱动）。"""

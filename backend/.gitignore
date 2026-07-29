@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# ---------- 阶段 3：本地对象存储 ----------
+var/

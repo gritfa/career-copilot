@@ -89,3 +89,123 @@ export function fmtTime(iso?: string | null): string {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("zh-CN", { hour12: false });
 }
+
+/* ---------------- 简历与事实库（docs/04-api.md 第 4 节） ---------------- */
+
+/** GET /resumes 列表项 / GET /resumes/{id}（不含正文） */
+export interface Resume {
+  id: string;
+  file_name?: string;
+  /** uploaded | parsing | parsed | failed 等，后端可能扩展 */
+  status?: string;
+  size_bytes?: number;
+  mime_type?: string;
+  created_at?: string;
+  uploaded_at?: string;
+  parse_error_code?: string | null;
+}
+
+/** POST /resumes/uploads 返回的上传会话/预签名参数（字段宽松兼容） */
+export interface ResumeUploadSession {
+  id?: string;
+  upload_id?: string;
+  upload_url?: string;
+  url?: string;
+  method?: string;
+  headers?: Record<string, string>;
+}
+
+/** 候选事实的原文证据片段 */
+export interface SourceSpan {
+  text?: string;
+  start?: number;
+  end?: number;
+  page?: number;
+}
+
+/** GET /resumes/{id}/parse 返回的单条候选事实 */
+export interface FactCandidate {
+  id: string;
+  /** profile | skill | work_experience | project | education */
+  group?: string;
+  category?: string;
+  label?: string;
+  value?: string;
+  source_span?: SourceSpan | null;
+  evidence_text?: string;
+  confidence?: number;
+}
+
+/** GET /resumes/{id}/parse：解析状态和候选事实 */
+export interface ParseStatus {
+  status?: string;
+  error_code?: string | null;
+  error_message?: string | null;
+  candidates?: FactCandidate[];
+  items?: FactCandidate[];
+}
+
+/** GET /profile/facts 中的已确认事实 */
+export interface ProfileFact {
+  id: string;
+  group?: string;
+  category?: string;
+  label?: string;
+  value?: string;
+  version?: number;
+  status?: string;
+  source_resume_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** 事实分组 key → 展示名（按 docs/05 第 8 节顺序） */
+export const FACT_GROUP_NAMES: Record<string, string> = {
+  profile: "个人概况",
+  skill: "技能",
+  skills: "技能",
+  work_experience: "工作经历",
+  work: "工作经历",
+  project: "项目",
+  projects: "项目",
+  education: "教育",
+};
+
+/** 分组展示顺序（未知分组排在最后的「其他」） */
+export const FACT_GROUP_ORDER = [
+  "profile",
+  "skill",
+  "work_experience",
+  "project",
+  "education",
+] as const;
+
+/** 归一化分组 key（skills → skill 等），未知返回 "other" */
+export function normalizeFactGroup(raw?: string): string {
+  if (!raw) return "other";
+  const key = raw.toLowerCase();
+  if (key === "skills") return "skill";
+  if (key === "work" || key === "work_experiences") return "work_experience";
+  if (key === "projects") return "project";
+  return FACT_GROUP_NAMES[key] ? key : "other";
+}
+
+/** 分组 key → 展示名（含未知分组兜底） */
+export function factGroupName(key: string): string {
+  return FACT_GROUP_NAMES[key] ?? "其他";
+}
+
+/** 简历状态 → 中文展示 */
+export const RESUME_STATUS_NAMES: Record<string, string> = {
+  uploaded: "已上传",
+  pending: "等待解析",
+  queued: "等待解析",
+  parsing: "解析中",
+  processing: "解析中",
+  parsed: "解析完成",
+  succeeded: "解析完成",
+  completed: "解析完成",
+  ready: "解析完成",
+  confirmed: "事实已确认",
+  failed: "解析失败",
+};

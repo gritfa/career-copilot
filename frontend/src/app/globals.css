@@ -171,6 +171,77 @@ a {
   color: #16a34a;
 }
 
+/* 页内 Tab（简历工作台 / 事实库） */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.35);
+  font-size: 14px;
+}
+
+.tabs a {
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  opacity: 0.7;
+}
+
+.tabs a.active {
+  opacity: 1;
+  border-bottom-color: #2563eb;
+  color: #2563eb;
+  font-weight: bold;
+}
+
+/* 上传拖拽区 */
+.dropzone {
+  border: 2px dashed rgba(127, 127, 127, 0.5);
+  border-radius: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  margin: 12px 0;
+}
+
+.dropzone.dragover {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+/* 状态徽标 */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 127, 127, 0.5);
+  font-size: 12px;
+}
+
+.badge-ok {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+.badge-busy {
+  border-color: #d97706;
+  color: #d97706;
+}
+
+.badge-fail {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+/* 原文证据片段 */
+.evidence {
+  border-left: 3px solid rgba(127, 127, 127, 0.45);
+  padding: 4px 10px;
+  margin: 8px 0;
+  font-size: 13px;
+  opacity: 0.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* 二次确认弹层 */
 .overlay {
   position: fixed;

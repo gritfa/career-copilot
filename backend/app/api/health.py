@@ -21,15 +21,17 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 _ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
 
-# 能力矩阵：本阶段没有任何能力经过真实验证，全部 not_verified。
-# 状态只允许在真实验证通过后由对应阶段改为 ready / degraded / disabled。
+# 能力矩阵：状态只允许在真实验证通过后由对应阶段改为 ready / degraded / disabled。
+# 阶段 3：resume_parse_pdf / resume_parse_docx 经本机真实容器集成测试
+# （合成 PDF/DOCX 上传 → Celery 解析 → 候选 → 确认全流程）验证通过，标记 ready。
+# 模型/来源/导出等能力仍未真实验证，保持 not_verified。
 CAPABILITIES: dict[str, str] = {
     "job_source": "not_verified",
     "deepseek_generation": "not_verified",
     "qwen_fallback": "not_verified",
     "aliyun_embedding": "not_verified",
-    "resume_parse_pdf": "not_verified",
-    "resume_parse_docx": "not_verified",
+    "resume_parse_pdf": "ready",
+    "resume_parse_docx": "ready",
     "docx_export": "not_verified",
     "pdf_export": "not_verified",
     "email_magic_link": "not_verified",

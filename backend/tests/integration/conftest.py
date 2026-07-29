@@ -44,7 +44,19 @@ TEST_REDIS_URL = os.getenv("TEST_REDIS_URL", "redis://localhost:56379/1")
 MAILPIT_API = os.getenv("TEST_MAILPIT_API", "http://localhost:8025/api/v1")
 SMTP_PORT = os.getenv("TEST_SMTP_PORT", "1025")
 
-TABLES = ("audit_events", "consents", "sessions", "auth_tokens", "invites", "users")
+TABLES = (
+    "fact_evidence",
+    "profile_facts",
+    "fact_candidates",
+    "resume_parses",
+    "resumes",
+    "audit_events",
+    "consents",
+    "sessions",
+    "auth_tokens",
+    "invites",
+    "users",
+)
 
 
 @pytest.fixture(scope="session")
@@ -67,13 +79,19 @@ def prepare_test_db() -> str:
 
 
 @pytest.fixture
-def real_env(prepare_test_db, monkeypatch):
-    """把配置切到真实依赖；结束后由 monkeypatch 自动还原并清缓存。"""
+def real_env(prepare_test_db, monkeypatch, tmp_path):
+    """把配置切到真实依赖；结束后由 monkeypatch 自动还原并清缓存。
+
+    阶段 3：本地对象存储指向测试临时目录；Celery 走 eager
+    （任务代码仍是真实 Celery 任务，经 dispatch_task 的 apply 路径同步执行）。
+    """
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("REDIS_URL", TEST_REDIS_URL)
     monkeypatch.setenv("SMTP_HOST", "localhost")
     monkeypatch.setenv("SMTP_PORT", SMTP_PORT)
     monkeypatch.setenv("ENV", "test")
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("CELERY_TASK_ALWAYS_EAGER", "1")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

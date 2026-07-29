@@ -8,8 +8,8 @@ import type { SessionInfo } from "@/lib/types";
 
 /**
  * 首次建档（docs/05-ui-ux.md 第 4 节）。
- * 阶段 2 实现：①年龄与协议 ②模型服务商授权 ③完成。
- * 上传简历、事实确认、创建方案等步骤待阶段 3 开放。
+ * 本页实现：①年龄与协议 ②模型服务商授权 ③完成。
+ * 上传简历与事实确认在「简历工作台」（/resumes）完成；创建方案待后续开放。
  */
 
 interface ProviderCard {
@@ -117,7 +117,9 @@ export default function OnboardingPage() {
   return (
     <main className="page">
       <h1>首次建档</h1>
-      <p className="muted">按步骤完成建档；后续步骤将在阶段 3 开放。</p>
+      <p className="muted">
+        完成基础建档后，前往简历工作台上传简历并确认事实。
+      </p>
 
       <ol className="steps">
         <li className={step === 1 ? "active" : "done"}>1. 年龄与协议</li>
@@ -125,9 +127,9 @@ export default function OnboardingPage() {
           2. 模型服务商授权
         </li>
         <li className={step === 3 ? "active" : ""}>3. 完成</li>
-        <li>4. 上传简历（待阶段3开放）</li>
-        <li>5. 确认事实（待阶段3开放）</li>
-        <li>6. 创建求职方案（待阶段3开放）</li>
+        <li>4. 上传简历（在简历工作台完成）</li>
+        <li>5. 确认事实（在简历工作台完成）</li>
+        <li>6. 创建求职方案（待开放）</li>
       </ol>
 
       {step === 1 && (
@@ -280,13 +282,18 @@ export default function OnboardingPage() {
             </p>
           </div>
           <div className="card">
-            <p className="muted">
-              上传简历、确认事实、创建求职方案等后续步骤 —— 待阶段3开放。
+            <p style={{ lineHeight: 1.7 }}>
+              下一步：前往简历工作台上传简历（PDF/DOCX），解析完成后逐条确认候选事实，建立你的事实库。创建求职方案功能待后续开放。
             </p>
           </div>
-          <Link href="/dashboard" className="btn btn-primary">
-            进入首页
-          </Link>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <Link href="/resumes" className="btn btn-primary">
+              上传简历
+            </Link>
+            <Link href="/dashboard" className="btn">
+              进入首页
+            </Link>
+          </div>
         </section>
       )}
     </main>
