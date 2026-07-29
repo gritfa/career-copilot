@@ -34,13 +34,18 @@ def create_celery_app() -> Celery:
         task_soft_time_limit=240,
         task_always_eager=settings.celery_task_always_eager,
         task_eager_propagates=False,
-        imports=("app.resumes.tasks", "app.jobs.tasks"),
+        imports=("app.resumes.tasks", "app.jobs.tasks", "app.matching.tasks"),
         broker_connection_retry_on_startup=True,
         # 岗位来源：全局每天一次（docs/06 第 5 节）；各来源在任务内随机抖动错峰
         beat_schedule={
             "daily-job-source-sync": {
                 "task": "jobs.sync_all_sources",
                 "schedule": crontab(hour=3, minute=30),
+            },
+            # 每日推荐：跟随岗位同步之后（同步 3:30 + 抖动最长 30 分钟）
+            "daily-generate-recommendations": {
+                "task": "matching.generate_all_recommendations",
+                "schedule": crontab(hour=4, minute=30),
             },
         },
     )

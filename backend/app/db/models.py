@@ -8,18 +8,21 @@
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -47,6 +50,34 @@ SOURCE_RUN_STATUSES = ("running", "success", "partial_failure", "failed")
 JOB_POSTING_STATUSES = ("active", "inactive", "unknown")
 DEDUPE_STATUSES = ("unique", "merged", "pending_review")
 CANONICAL_REVIEW_STATUSES = ("auto", "pending_review", "confirmed")
+
+RECOMMENDATION_GRADES = ("high", "potential", "low")
+HARD_FILTER_STATUSES = ("passed", "uncertain")
+MATCH_COMPONENT_NAMES = (
+    "core_skills",
+    "experience",
+    "project_evidence",
+    "role_semantic",
+    "industry",
+    "preference",
+)
+GAP_LEVELS = ("none", "minor", "major", "unknown")
+FEEDBACK_SENTIMENTS = ("interested", "not_interested")
+# “不感兴趣”结构化原因（docs/05 第 11 节，9 类）
+FEEDBACK_REASON_CODES = (
+    "location",
+    "salary",
+    "company",
+    "tech_direction",
+    "job_content",
+    "experience_education",
+    "outsourcing",
+    "risk_concern",
+    "seen_duplicate",
+)
+# 向量维度：确定性合成 Adapter 与阿里云 text-embedding-v3(dimensions=768) 统一 768 维；
+# 不同 model_id/preprocess_version 的向量靠唯一键隔离，禁止混用（docs/07 第 3 节）。
+EMBEDDING_DIM = 768
 
 RESUME_STATUSES = ("uploaded", "parsing", "parsed", "parse_failed", "deleting", "deleted")
 MALWARE_SCAN_STATUSES = ("pending", "clean", "infected", "skipped_not_configured")
@@ -866,4 +897,244 @@ class JobPosting(Base):
         ),
         Index("ix_job_postings_canonical", "canonical_job_id"),
         Index("ix_job_postings_company_title_city", "company_id", "title_normalized", "city_code"),
+    )
+
+
+# ---------------- 阶段 5：匹配 / 推荐 / 反馈 / 向量（docs/03 第 7、8 节） ----------------
+
+
+class Recommendation(Base):
+    """每日推荐结果：同一方案、岗位、日期唯一（docs/03 第 7 节）。
+
+    hard_filter_status 只有 passed / uncertain 两态入库——failed 的岗位不生成推荐。
+    hard_conditions_json 保存逐项三态明细与证据（绝无裸布尔）。
+    """
+
+    __tablename__ = "recommendations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    search_plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("search_plans.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    canonical_job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    score_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    grade: Mapped[str] = mapped_column(String(16), nullable=False)
+    hard_filter_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    hard_conditions_json: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    scoring_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 版本链（docs/07 第 13 节）：hard_rule_version / embedding model / preprocess
+    versions_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    recommended_on: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("score_total BETWEEN 0 AND 100", name="ck_recommendations_score_range"),
+        CheckConstraint(
+            "grade IN ('high', 'potential', 'low')", name="ck_recommendations_grade"
+        ),
+        CheckConstraint(
+            "hard_filter_status IN ('passed', 'uncertain')",
+            name="ck_recommendations_hard_filter_status",
+        ),
+        CheckConstraint("rank >= 1", name="ck_recommendations_rank_positive"),
+        UniqueConstraint(
+            "search_plan_id",
+            "canonical_job_id",
+            "recommended_on",
+            name="uq_recommendations_plan_job_day",
+        ),
+        Index("ix_recommendations_plan_day", "search_plan_id", "recommended_on"),
+    )
+
+
+class MatchComponent(Base):
+    """评分分项：每项带证据引用或显式 insufficient_evidence（docs/07 第 5 节）。"""
+
+    __tablename__ = "match_components"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    recommendation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recommendations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    component: Mapped[str] = mapped_column(String(32), nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    weight: Mapped[int] = mapped_column(Integer, nullable=False)
+    evidence_refs_json: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    gap_level: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    uncertainty: Mapped[str | None] = mapped_column(String(64))
+
+    __table_args__ = (
+        CheckConstraint(
+            "component IN ('core_skills', 'experience', 'project_evidence', "
+            "'role_semantic', 'industry', 'preference')",
+            name="ck_match_components_component",
+        ),
+        CheckConstraint("score BETWEEN 0 AND 100", name="ck_match_components_score_range"),
+        CheckConstraint("weight BETWEEN 0 AND 100", name="ck_match_components_weight_range"),
+        CheckConstraint(
+            "gap_level IN ('none', 'minor', 'major', 'unknown')",
+            name="ck_match_components_gap_level",
+        ),
+        UniqueConstraint(
+            "recommendation_id", "component", name="uq_match_components_rec_component"
+        ),
+    )
+
+
+class UserFeedback(Base):
+    """显式反馈：感兴趣/不感兴趣 + 结构化原因；note 不得进日志/审计/第三方分析。"""
+
+    __tablename__ = "user_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    recommendation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recommendations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    sentiment: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(32))
+    optional_note: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "sentiment IN ('interested', 'not_interested')",
+            name="ck_user_feedback_sentiment",
+        ),
+        CheckConstraint(
+            "reason_code IS NULL OR reason_code IN ('location', 'salary', 'company', "
+            "'tech_direction', 'job_content', 'experience_education', 'outsourcing', "
+            "'risk_concern', 'seen_duplicate')",
+            name="ck_user_feedback_reason_code",
+        ),
+        # 不感兴趣必须给结构化原因（docs/05 第 11 节）
+        CheckConstraint(
+            "NOT (sentiment = 'not_interested' AND reason_code IS NULL)",
+            name="ck_user_feedback_not_interested_reason",
+        ),
+    )
+
+
+class JobVector(Base):
+    """岗位向量：模型 ID + 维度 + 预处理版本入唯一键，禁止新旧模型混用。"""
+
+    __tablename__ = "job_vectors"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    canonical_job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    embedding: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    preprocess_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    # 向量文本哈希：文本变化时才重算（文本本身不入库）
+    source_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("dim > 0", name="ck_job_vectors_dim_positive"),
+        UniqueConstraint(
+            "canonical_job_id",
+            "model_id",
+            "preprocess_version",
+            name="uq_job_vectors_job_model_version",
+        ),
+    )
+
+
+class ProfileVector(Base):
+    """简历侧向量（按求职方案）：已确认事实 + 方案基础信息构造，绝不含联系方式/受保护属性。"""
+
+    __tablename__ = "profile_vectors"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    search_plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("search_plans.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    embedding: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    preprocess_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("dim > 0", name="ck_profile_vectors_dim_positive"),
+        UniqueConstraint(
+            "search_plan_id",
+            "model_id",
+            "preprocess_version",
+            name="uq_profile_vectors_plan_model_version",
+        ),
+    )
+
+
+class UsageLedger(Base):
+    """模型/Embedding 费用账本（docs/03 第 8 节）：只记计数与估算金额，无正文。"""
+
+    __tablename__ = "usage_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    amount_estimated: Mapped[Any] = mapped_column(
+        Numeric(12, 6), nullable=False, default=0
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("tokens_in >= 0", name="ck_usage_ledger_tokens_in_nonnegative"),
+        CheckConstraint("tokens_out >= 0", name="ck_usage_ledger_tokens_out_nonnegative"),
+        Index("ix_usage_ledger_user_occurred", "user_id", "occurred_at"),
+        Index("ix_usage_ledger_provider_occurred", "provider", "occurred_at"),
     )

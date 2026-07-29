@@ -9,11 +9,16 @@ os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 os.environ["HEALTH_CHECK_TIMEOUT_SECONDS"] = "1.0"
 
 import pytest  # noqa: E402
+import structlog  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
 
 get_settings.cache_clear()
+
+# 测试中禁用 logger 缓存：否则先跑的测试会用原始 processors 缓存 logger，
+# 之后 structlog.testing.capture_logs() 拦不到日志（单跑过、全量挂的元凶）。
+structlog.configure(cache_logger_on_first_use=False)
 
 
 @pytest.fixture

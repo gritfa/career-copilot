@@ -12,10 +12,14 @@ EXPECTED_CAPABILITIES = {
     "docx_export",
     "pdf_export",
     "email_magic_link",
+    "matching_basic",
 }
 
-# 阶段 3：只有本机真实解析集成测试通过的两项才允许 ready
-READY_CAPABILITIES = {"resume_parse_pdf", "resume_parse_docx"}
+# 阶段 3：本机真实解析集成测试通过的两项 ready；
+# 阶段 5：matching_basic（硬条件+确定性向量召回+评分+反馈）经真实
+# PG(pgvector)/Redis 容器集成测试验证 → ready。aliyun_embedding 无 key，
+# 保持 not_verified。
+READY_CAPABILITIES = {"resume_parse_pdf", "resume_parse_docx", "matching_basic"}
 
 # 阶段 4：BOSS 无允许的自动访问方式，能力如实标 import_only（绝不显示采集正常）
 IMPORT_ONLY_CAPABILITIES = {"job_source:boss"}

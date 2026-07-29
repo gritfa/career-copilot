@@ -4,19 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
+import RecommendationCard from "@/components/RecommendationCard";
 import {
   type EmptyReason,
   type LinkOutEntry,
-  type RecommendationListItem,
+  type Recommendation,
+  type SearchPlan,
+  GRADE_NAMES,
+  directionLabel,
   extractEmptyReason,
   extractLinkOuts,
   toItems,
 } from "@/lib/types";
 
 /**
- * 每日推荐（本阶段重点是空态，docs/05-ui-ux.md 第 14 节）：
- * 空态需区分 来源暂无数据 / 硬条件过严 / 能力降级 三种原因，
- * 并提供原平台搜索跳转（GET /recommendations 返回的 link_out）与手动导入入口。
+ * 每日推荐列表（docs/05 第 6 节 + 第 14 节空态）：
+ * - 筛选条：方案 / 日期 / 等级 / 状态（GET /recommendations 查询参数）
+ * - 推荐卡片复用 RecommendationCard（Dashboard 同款）
+ * - 空态区分 来源暂无数据 / 硬条件过严 / 能力降级，并提供原平台跳转与手动导入
  */
 
 const REASON_TEXTS: Record<Exclude<EmptyReason, "unknown">, { title: string; body: string }> = {
@@ -34,34 +39,44 @@ const REASON_TEXTS: Record<Exclude<EmptyReason, "unknown">, { title: string; bod
   },
 };
 
-type PageState =
-  | { kind: "loading" }
-  | { kind: "error"; reason: string }
+/** 反馈状态筛选（后端并行开发中，按契约传 status 参数） */
+const STATUS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "", label: "全部状态" },
+  { value: "pending", label: "未反馈" },
+  { value: "interested", label: "已感兴趣" },
+  { value: "not_interested", label: "已不感兴趣" },
+];
+
+/** 请求结果带上查询串，用于派生「加载中」状态（结果与当前筛选不一致即视为加载中） */
+type FetchResult =
+  | { qs: string; kind: "error"; reason: string }
   | {
+      qs: string;
       kind: "ready";
-      items: RecommendationListItem[];
+      items: Recommendation[];
       linkOuts: LinkOutEntry[];
       emptyReason: EmptyReason;
     };
 
 export default function RecommendationsPage() {
-  const [state, setState] = useState<PageState>({ kind: "loading" });
+  const [result, setResult] = useState<FetchResult | null>(null);
+  const [plans, setPlans] = useState<SearchPlan[]>([]);
 
+  // 筛选条件
+  const [planId, setPlanId] = useState("");
+  const [date, setDate] = useState("");
+  const [grade, setGrade] = useState("");
+  const [status, setStatus] = useState("");
+
+  // 方案列表只加载一次（筛选用，失败不阻断页面）
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await api.get<unknown>("/recommendations");
-        if (cancelled) return;
-        setState({
-          kind: "ready",
-          items: toItems<RecommendationListItem>(data),
-          linkOuts: extractLinkOuts(data),
-          emptyReason: extractEmptyReason(data),
-        });
-      } catch (err) {
-        if (cancelled) return;
-        setState({ kind: "error", reason: handleApiError(err) });
+        const data = await api.get<unknown>("/search-plans");
+        if (!cancelled) setPlans(toItems<SearchPlan>(data));
+      } catch {
+        // 方案筛选降级为不可用即可，不影响推荐列表
       }
     })();
     return () => {
@@ -69,55 +84,132 @@ export default function RecommendationsPage() {
     };
   }, []);
 
+  const params = new URLSearchParams();
+  if (planId) params.set("plan_id", planId);
+  if (date) params.set("date", date);
+  if (grade) params.set("grade", grade);
+  if (status) params.set("status", status);
+  const qs = params.toString();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<unknown>(`/recommendations${qs ? `?${qs}` : ""}`);
+        if (cancelled) return;
+        setResult({
+          qs,
+          kind: "ready",
+          items: toItems<Recommendation>(data),
+          linkOuts: extractLinkOuts(data),
+          emptyReason: extractEmptyReason(data),
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setResult({ qs, kind: "error", reason: handleApiError(err) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qs]);
+
+  // 结果对应的查询串与当前筛选不一致 → 加载中
+  const state = result && result.qs === qs ? result : null;
+  const filtered = Boolean(planId || date || grade || status);
+
   return (
     <main className="page">
       <h1>每日推荐</h1>
+      <p className="muted">分数代表岗位适配度，不代表面试或录用概率。</p>
 
-      {state.kind === "loading" ? <p className="muted">加载中…</p> : null}
+      <div className="filters">
+        <label className="field">
+          <span>方案</span>
+          <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            <option value="">全部方案</option>
+            {plans.map((plan) => (
+              <option key={plan.id} value={plan.id}>
+                {plan.name || directionLabel(plan.role_family ?? plan.direction)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>日期</span>
+          <input
+            type="date"
+            className="input"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>等级</span>
+          <select className="input" value={grade} onChange={(e) => setGrade(e.target.value)}>
+            <option value="">全部等级</option>
+            {Object.entries(GRADE_NAMES).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>状态</span>
+          <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
-      {state.kind === "error" ? (
+      {state === null ? <p className="muted">加载中…</p> : null}
+
+      {state?.kind === "error" ? (
         <>
           <p className="error-text">{state.reason}</p>
           <ImportEntry />
         </>
       ) : null}
 
-      {state.kind === "ready" && state.items.length > 0 ? (
+      {state?.kind === "ready" && state.items.length > 0 ? (
         <>
           <p className="muted">共 {state.items.length} 条推荐。</p>
           {state.items.map((item) => (
-            <div key={item.id} className="card">
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <strong>{item.job_title ?? item.title ?? "（无标题岗位）"}</strong>
-                {item.score != null ? (
-                  <span className="badge">
-                    {item.score} 分{item.grade ? ` · ${item.grade}` : ""}
-                  </span>
-                ) : null}
-              </div>
-              <p className="muted" style={{ marginTop: 6 }}>
-                {item.company ?? item.company_name ?? "公司未知"}
-                {" · "}
-                {item.city ??
-                  (item.cities && item.cities.length > 0
-                    ? item.cities.join(" / ")
-                    : "城市未知")}
-                {item.salary_text ? ` · ${item.salary_text}` : ""}
-              </p>
-            </div>
+            <RecommendationCard key={item.id} item={item} />
           ))}
         </>
       ) : null}
 
-      {state.kind === "ready" && state.items.length === 0 ? (
-        <EmptyState reason={state.emptyReason} linkOuts={state.linkOuts} />
+      {state?.kind === "ready" && state.items.length === 0 ? (
+        filtered ? (
+          <div className="card">
+            <strong>当前筛选条件下没有推荐</strong>
+            <p className="muted" style={{ marginTop: 6 }}>
+              可以调整方案、日期、等级或状态筛选，或清空筛选后查看全部推荐。
+            </p>
+            <p style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setPlanId("");
+                  setDate("");
+                  setGrade("");
+                  setStatus("");
+                }}
+              >
+                清空筛选
+              </button>
+            </p>
+          </div>
+        ) : (
+          <EmptyState reason={state.emptyReason} linkOuts={state.linkOuts} />
+        )
       ) : null}
     </main>
   );

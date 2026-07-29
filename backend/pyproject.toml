@@ -21,6 +21,8 @@ dependencies = [
     "pypdf>=5.1",
     "python-docx>=1.1",
     "python-multipart>=0.0.18",
+    "pgvector>=0.3.6",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]

@@ -505,7 +505,7 @@ export function extractEmptyReason(data: unknown): EmptyReason {
   return "unknown";
 }
 
-/** GET /recommendations 列表项（当前阶段只做空态与最小卡片，字段宽松兼容） */
+/** GET /recommendations 列表项（字段按契约宽松兼容） */
 export interface RecommendationListItem {
   id: string;
   score?: number;
@@ -520,6 +520,527 @@ export interface RecommendationListItem {
   salary_text?: string;
   source?: string;
   source_name?: string;
+}
+
+/* ---------------- 推荐详情、反馈与能力状态（docs/04 第 6 节、docs/07） ---------------- */
+
+/** 硬条件三态（docs/07 第 2 节：必须返回 passed/failed/unknown 和证据） */
+export type HardConditionStatus = "passed" | "failed" | "unknown";
+
+export function normalizeHardStatus(raw?: string): HardConditionStatus {
+  const s = (raw ?? "").toLowerCase();
+  if (s === "passed" || s === "pass" || s === "ok" || s === "true") return "passed";
+  if (s === "failed" || s === "fail" || s === "false") return "failed";
+  return "unknown";
+}
+
+/** 三态的图标 + 文案（颜色不是唯一表达，必须带文字） */
+export const HARD_STATUS_META: Record<
+  HardConditionStatus,
+  { icon: string; label: string; badgeClass: string }
+> = {
+  passed: { icon: "✓", label: "通过", badgeClass: "badge badge-ok" },
+  failed: { icon: "✕", label: "未通过", badgeClass: "badge badge-fail" },
+  unknown: { icon: "？", label: "无法判断", badgeClass: "badge badge-busy" },
+};
+
+/** 单条硬条件结果 */
+export interface HardConditionItem {
+  code?: string;
+  name?: string;
+  label?: string;
+  status?: string;
+  evidence?: string;
+  detail?: string;
+  reason?: string;
+}
+
+/** GET /recommendations/{id} 的 hard_conditions */
+export interface HardConditions {
+  status?: string;
+  items?: HardConditionItem[];
+}
+
+/** 硬条件项的展示名（未知 code 原样展示） */
+const HARD_CONDITION_NAMES: Record<string, string> = {
+  city: "城市",
+  salary: "薪资",
+  work_mode: "办公方式",
+  employment_type: "全职",
+  full_time: "全职",
+  outsourcing: "外包/派遣",
+  blocked_company: "屏蔽公司",
+  education: "学历要求",
+  experience: "经验要求",
+};
+
+export function hardConditionLabel(item: HardConditionItem): string {
+  const key = (item.code ?? item.name ?? "").toLowerCase();
+  return item.label ?? HARD_CONDITION_NAMES[key] ?? item.name ?? item.code ?? "硬条件";
+}
+
+/** 匹配证据：简历事实 ↔ 岗位原文（docs/07 第 5 节，宽松兼容） */
+export interface MatchEvidence {
+  claim?: string;
+  fact_id?: string;
+  profile_fact_ids?: string[];
+  fact_text?: string;
+  resume_fact?: string;
+  job_span?: string;
+  job_evidence?: { span?: string; snapshot_id?: string } | string | null;
+  strength?: string;
+  uncertainty?: string | null;
+}
+
+/** 证据中的简历侧文本（缺失返回空串，由页面显示「信息不足」） */
+export function evidenceFactText(e: MatchEvidence): string {
+  return e.fact_text ?? e.resume_fact ?? e.claim ?? "";
+}
+
+/** 证据中的岗位原文片段 */
+export function evidenceJobText(e: MatchEvidence): string {
+  if (typeof e.job_span === "string" && e.job_span) return e.job_span;
+  if (typeof e.job_evidence === "string") return e.job_evidence;
+  if (e.job_evidence && typeof e.job_evidence === "object") {
+    return e.job_evidence.span ?? "";
+  }
+  return "";
+}
+
+/** 分项分数（docs/04 第 6 节 components） */
+export interface MatchComponent {
+  name?: string;
+  code?: string;
+  score?: number;
+  weight?: number;
+  evidence?: MatchEvidence[];
+}
+
+/** 分项维度 → 展示名 + 初始权重（docs/07 第 4 节，后端给了 weight 则以后端为准） */
+const COMPONENT_META: Record<string, { label: string; weight: number }> = {
+  skills: { label: "核心技能", weight: 35 },
+  skill: { label: "核心技能", weight: 35 },
+  experience: { label: "工作经验", weight: 20 },
+  work_experience: { label: "工作经验", weight: 20 },
+  projects: { label: "项目证据", weight: 20 },
+  project: { label: "项目证据", weight: 20 },
+  direction: { label: "岗位方向", weight: 10 },
+  role_direction: { label: "岗位方向", weight: 10 },
+  semantic: { label: "岗位方向", weight: 10 },
+  industry: { label: "行业/业务背景", weight: 5 },
+  preferences: { label: "用户偏好", weight: 10 },
+  preference: { label: "用户偏好", weight: 10 },
+  user_preferences: { label: "用户偏好", weight: 10 },
+};
+
+export function componentLabel(c: MatchComponent): string {
+  const key = (c.name ?? c.code ?? "").toLowerCase();
+  return COMPONENT_META[key]?.label ?? c.name ?? c.code ?? "其他";
+}
+
+/** 分项权重：后端字段优先，否则回退 docs/07 初始权重，未知维度返回 null */
+export function componentWeight(c: MatchComponent): number | null {
+  if (typeof c.weight === "number") return c.weight;
+  const key = (c.name ?? c.code ?? "").toLowerCase();
+  return COMPONENT_META[key]?.weight ?? null;
+}
+
+/** 风险信号（docs/04 第 6 节 risks；不确定性必须标注，不得当成确定结论） */
+export interface RiskSignal {
+  code?: string;
+  name?: string;
+  severity?: string;
+  evidence?: string;
+  uncertainty?: string | boolean | null;
+  note?: string;
+}
+
+const RISK_CODE_NAMES: Record<string, string> = {
+  POSSIBLE_OUTSOURCING: "疑似外包/派遣",
+  OUTSOURCING: "外包/派遣",
+  POSSIBLE_SCAM: "疑似虚假/收费岗位",
+  FEE_REQUIRED: "疑似要求付费",
+  POSSIBLE_STALE: "岗位可能已过期",
+  STALE_JOB: "岗位可能已过期",
+  DUPLICATE: "疑似重复岗位",
+  VAGUE_JD: "职位描述含糊",
+};
+
+export function riskName(risk: RiskSignal): string {
+  const code = (risk.code ?? "").toUpperCase();
+  return risk.name ?? RISK_CODE_NAMES[code] ?? risk.code ?? "风险信号";
+}
+
+export const RISK_SEVERITY_NAMES: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+};
+
+/** 风险是否带不确定性标注 */
+export function riskUncertain(risk: RiskSignal): boolean {
+  const code = (risk.code ?? "").toUpperCase();
+  return Boolean(risk.uncertainty) || code.startsWith("POSSIBLE_");
+}
+
+/** 「不感兴趣」原因（docs/05 第 11 节，9 类） */
+export type FeedbackReason =
+  | "location"
+  | "salary"
+  | "company"
+  | "tech_direction"
+  | "job_content"
+  | "requirements"
+  | "outsourcing"
+  | "risk_concern"
+  | "duplicate";
+
+export const FEEDBACK_REASONS: ReadonlyArray<{ value: FeedbackReason; label: string }> = [
+  { value: "location", label: "地点不合适" },
+  { value: "salary", label: "薪资不合适" },
+  { value: "company", label: "不想去这家公司" },
+  { value: "tech_direction", label: "技术方向不匹配" },
+  { value: "job_content", label: "岗位内容不合适" },
+  { value: "requirements", label: "经验/学历要求不符" },
+  { value: "outsourcing", label: "外包/派遣" },
+  { value: "risk_concern", label: "风险顾虑" },
+  { value: "duplicate", label: "已看过/重复" },
+];
+
+export function feedbackReasonLabel(value: string): string {
+  return FEEDBACK_REASONS.find((r) => r.value === value)?.label ?? value;
+}
+
+/** 已提交的反馈（响应字段宽松兼容：feedback 可能是字符串或对象） */
+export interface RecommendationFeedback {
+  type?: string;
+  status?: string;
+  feedback?: string;
+  interest?: string;
+  reasons?: string[];
+  reason_codes?: string[];
+  note?: string | null;
+  created_at?: string;
+}
+
+/** 归一化后的反馈状态 */
+export interface FeedbackState {
+  kind: "interested" | "not_interested";
+  reasons: string[];
+  note?: string;
+}
+
+/** 从推荐对象里宽松解析当前反馈状态（无反馈返回 null） */
+export function parseFeedback(rec: Recommendation): FeedbackState | null {
+  const raw = rec.feedback ?? rec.my_feedback ?? null;
+  let kind = "";
+  let reasons: string[] = [];
+  let note: string | undefined;
+  if (typeof raw === "string") {
+    kind = raw;
+  } else if (raw && typeof raw === "object") {
+    const f = raw as RecommendationFeedback;
+    kind = f.type ?? f.status ?? f.feedback ?? f.interest ?? "";
+    reasons = f.reasons ?? f.reason_codes ?? [];
+    note = f.note ?? undefined;
+  }
+  const key = kind.toLowerCase();
+  if (key === "interested" || key === "like" || key === "positive") {
+    return { kind: "interested", reasons, note };
+  }
+  if (
+    key === "not_interested" ||
+    key === "uninterested" ||
+    key === "dislike" ||
+    key === "negative"
+  ) {
+    return { kind: "not_interested", reasons, note };
+  }
+  return null;
+}
+
+/**
+ * GET /recommendations 列表项 / GET /recommendations/{id} 详情。
+ * 后端并行开发中，字段全部宽松声明。
+ */
+export interface Recommendation extends RecommendationListItem {
+  salary_min?: number;
+  salary_max?: number;
+  salary_range?: string;
+  salary_months?: number;
+  published_at?: string;
+  first_seen_at?: string;
+  discovered_at?: string;
+  created_at?: string;
+  primary_source?: string;
+  /** 前几个匹配点（字符串或含 label/text/claim 的对象） */
+  match_points?: unknown[];
+  highlights?: unknown[];
+  top_matches?: unknown[];
+  /** 最关键缺口 */
+  key_gap?: string;
+  top_gap?: string;
+  gaps?: unknown[];
+  risks?: RiskSignal[];
+  hard_conditions?: HardConditions;
+  components?: MatchComponent[];
+  analysis_level?: string;
+  source_links?: unknown[];
+  sources?: unknown[];
+  job_description?: string;
+  description?: string;
+  requirements_text?: string;
+  feedback?: RecommendationFeedback | string | null;
+  my_feedback?: RecommendationFeedback | string | null;
+}
+
+/** 等级 → 展示名（docs/07：80-100 high / 65-79 potential / <65 low） */
+export const GRADE_NAMES: Record<string, string> = {
+  high: "高匹配",
+  potential: "可尝试",
+  low: "低匹配",
+};
+
+export function gradeName(grade?: string): string {
+  if (!grade) return "";
+  return GRADE_NAMES[grade.toLowerCase()] ?? grade;
+}
+
+export function gradeBadgeClass(grade?: string): string {
+  const g = (grade ?? "").toLowerCase();
+  if (g === "high") return "badge badge-ok";
+  if (g === "potential") return "badge badge-busy";
+  return "badge";
+}
+
+/** 推荐卡片的岗位名/公司/城市 */
+export function recTitle(rec: Recommendation): string {
+  return rec.job_title ?? rec.title ?? "（无标题岗位）";
+}
+
+export function recCompany(rec: Recommendation): string {
+  return rec.company ?? rec.company_name ?? "公司未知";
+}
+
+export function recCity(rec: Recommendation): string {
+  if (rec.city) return rec.city;
+  if (rec.cities && rec.cities.length > 0) return rec.cities.join(" / ");
+  return "城市未知";
+}
+
+/** 薪资展示：缺失时按契约显示「未披露」，有薪数时附带 */
+export function recSalaryText(rec: Recommendation): string {
+  let base = "";
+  if (rec.salary_text) base = rec.salary_text;
+  else if (rec.salary_range) base = rec.salary_range;
+  else {
+    const { salary_min: min, salary_max: max } = rec;
+    const fmt = (n: number) => `${n.toLocaleString("zh-CN")} 元/月`;
+    if (min != null && max != null) base = `${fmt(min)} ~ ${fmt(max)}`;
+    else if (min != null || max != null) base = fmt((min ?? max) as number);
+  }
+  if (!base) return "薪资未披露";
+  if (rec.salary_months != null) return `${base} · ${rec.salary_months} 薪`;
+  return base;
+}
+
+/** 主来源展示 */
+export function recSourceText(rec: Recommendation): string {
+  return rec.primary_source ?? rec.source_name ?? rec.source ?? "";
+}
+
+/** 把字符串/对象混合数组归一化为字符串列表 */
+function toTextList(raw: unknown[] | undefined): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry === "string" && entry.trim()) {
+      out.push(entry.trim());
+    } else if (entry && typeof entry === "object") {
+      const e = entry as Record<string, unknown>;
+      const text =
+        (typeof e.label === "string" && e.label) ||
+        (typeof e.text === "string" && e.text) ||
+        (typeof e.claim === "string" && e.claim) ||
+        (typeof e.name === "string" && e.name) ||
+        (typeof e.description === "string" && e.description) ||
+        "";
+      if (text.trim()) out.push(text.trim());
+    }
+  }
+  return out;
+}
+
+/** 匹配点（用于卡片「前 3 个匹配点」） */
+export function recMatchPoints(rec: Recommendation): string[] {
+  for (const raw of [rec.match_points, rec.highlights, rec.top_matches]) {
+    const list = toTextList(raw);
+    if (list.length > 0) return list;
+  }
+  // 回退：从分项证据的 claim 提取
+  const fromComponents: string[] = [];
+  for (const c of rec.components ?? []) {
+    for (const e of c.evidence ?? []) {
+      const text = e.claim ?? "";
+      if (text && !fromComponents.includes(text)) fromComponents.push(text);
+    }
+  }
+  return fromComponents;
+}
+
+/** 关键缺口（缺失返回空串） */
+export function recKeyGap(rec: Recommendation): string {
+  if (rec.key_gap) return rec.key_gap;
+  if (rec.top_gap) return rec.top_gap;
+  const gaps = toTextList(rec.gaps);
+  return gaps[0] ?? "";
+}
+
+/** 全部缺口列表 */
+export function recGaps(rec: Recommendation): string[] {
+  const list = toTextList(rec.gaps);
+  if (list.length > 0) return list;
+  const single = recKeyGap(rec);
+  return single ? [single] : [];
+}
+
+/** 全部来源链接（详情页第 1 区块），兼容 source_links / sources */
+export function recSourceLinks(rec: Recommendation): LinkOutEntry[] {
+  const out: LinkOutEntry[] = [];
+  for (const raw of [rec.source_links, rec.sources]) {
+    if (!Array.isArray(raw)) continue;
+    for (const entry of raw) {
+      if (typeof entry === "string" && entry) {
+        out.push({ url: entry, label: hostnameOf(entry) });
+      } else if (entry && typeof entry === "object") {
+        const e = entry as Record<string, unknown>;
+        const url =
+          (typeof e.url === "string" && e.url) ||
+          (typeof e.source_url === "string" && e.source_url) ||
+          "";
+        if (!url) continue;
+        const label =
+          (typeof e.label === "string" && e.label) ||
+          (typeof e.source === "string" && e.source) ||
+          (typeof e.source_name === "string" && e.source_name) ||
+          (typeof e.name === "string" && e.name) ||
+          hostnameOf(url);
+        out.push({ url, label });
+      }
+    }
+    if (out.length > 0) break;
+  }
+  return out;
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+/* ---------------- 能力状态（GET /health/capabilities，docs/02 第 161-163 行） ---------------- */
+
+export interface CapabilityEntry {
+  name: string;
+  label: string;
+  status: string;
+}
+
+const CAPABILITY_NAMES: Record<string, string> = {
+  job_sources: "岗位来源",
+  sources: "岗位来源",
+  deepseek: "DeepSeek",
+  qwen: "通义千问",
+  embedding: "Embedding",
+  embeddings: "Embedding",
+  export: "导出",
+  exports: "导出",
+};
+
+/** 能力状态 → 展示文案 + 徽标 class */
+export function capabilityStatusMeta(status: string): { label: string; badgeClass: string } {
+  const s = status.toLowerCase();
+  if (["ok", "normal", "healthy", "up", "available", "active"].includes(s)) {
+    return { label: "正常", badgeClass: "badge badge-ok" };
+  }
+  if (["degraded", "limited", "partial", "slow"].includes(s)) {
+    return { label: "降级", badgeClass: "badge badge-busy" };
+  }
+  if (["down", "failed", "error", "unavailable", "disabled"].includes(s)) {
+    return { label: "不可用", badgeClass: "badge badge-fail" };
+  }
+  return { label: status, badgeClass: "badge" };
+}
+
+const CAPABILITY_TIME_KEYS = [
+  "updated_at",
+  "data_updated_at",
+  "jobs_updated_at",
+  "last_updated_at",
+  "last_sync_at",
+  "last_job_sync_at",
+];
+
+/**
+ * 宽松解析 /health/capabilities：
+ * 兼容 { capabilities: {...} }、{ items: [{name,status}] }、
+ * 以及顶层直接是 name → status（字符串或 { status }）的映射。
+ */
+export function parseCapabilities(data: unknown): CapabilityEntry[] {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+  let obj = data as Record<string, unknown>;
+  if (obj.capabilities && typeof obj.capabilities === "object" && !Array.isArray(obj.capabilities)) {
+    obj = obj.capabilities as Record<string, unknown>;
+  }
+  const entries: CapabilityEntry[] = [];
+  const push = (name: string, status: string) => {
+    if (!name || !status) return;
+    entries.push({
+      name,
+      label: CAPABILITY_NAMES[name.toLowerCase()] ?? name,
+      status,
+    });
+  };
+  if (Array.isArray(obj.items)) {
+    for (const item of obj.items) {
+      if (!item || typeof item !== "object") continue;
+      const e = item as Record<string, unknown>;
+      const name = (typeof e.name === "string" && e.name) || (typeof e.capability === "string" && e.capability) || "";
+      const status = typeof e.status === "string" ? e.status : "";
+      push(name, status);
+    }
+    return entries;
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    if (CAPABILITY_TIME_KEYS.includes(key) || key === "status" || key === "meta") continue;
+    if (typeof value === "string") {
+      push(key, value);
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      const status = (value as Record<string, unknown>).status;
+      if (typeof status === "string") push(key, status);
+    }
+  }
+  return entries;
+}
+
+/** 宽松提取数据更新时间（顶层或 meta 内） */
+export function extractDataUpdatedAt(data: unknown): string | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const obj = data as Record<string, unknown>;
+  const scopes: Record<string, unknown>[] = [obj];
+  if (obj.meta && typeof obj.meta === "object" && !Array.isArray(obj.meta)) {
+    scopes.push(obj.meta as Record<string, unknown>);
+  }
+  for (const scope of scopes) {
+    for (const key of CAPABILITY_TIME_KEYS) {
+      const v = scope[key];
+      if (typeof v === "string" && v) return v;
+    }
+  }
+  return null;
 }
 
 /** 简历状态 → 中文展示 */

@@ -6,6 +6,7 @@
 """
 
 import logging
+import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -40,7 +41,9 @@ def configure_logging(log_level: str = "INFO") -> None:
         ),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
-        cache_logger_on_first_use=True,
+        # 测试环境禁用缓存：否则 structlog.testing.capture_logs() 拦不到
+        # 已被早前测试缓存的 logger（表现为单跑通过、全量失败）。
+        cache_logger_on_first_use=os.environ.get("ENV") != "test",
     )
 
 

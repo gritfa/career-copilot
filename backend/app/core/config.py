@@ -104,6 +104,28 @@ class Settings(BaseSettings):
         default=False, validation_alias="CELERY_TASK_ALWAYS_EAGER"
     )
 
+    # ---- 阶段 5：Embedding / 匹配 ----
+    # 阿里云百炼（DashScope）API key；为空时使用确定性合成 Adapter，
+    # 能力 aliyun_embedding 保持 not_verified（00-master：不虚标未验证能力）。
+    dashscope_api_key: str = Field(default="", validation_alias="DASHSCOPE_API_KEY")
+    dashscope_base_url: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        validation_alias="DASHSCOPE_BASE_URL",
+    )
+    embedding_model_id: str = Field(
+        default="text-embedding-v3", validation_alias="EMBEDDING_MODEL_ID"
+    )
+    embedding_timeout_seconds: float = Field(
+        default=10.0, validation_alias="EMBEDDING_TIMEOUT_SECONDS"
+    )
+    embedding_batch_size: int = Field(default=10, validation_alias="EMBEDDING_BATCH_SIZE")
+    embedding_max_retries: int = Field(default=2, validation_alias="EMBEDDING_MAX_RETRIES")
+    # 向量召回 Top-K 与每方案每日新推荐上限（docs/07）
+    recall_top_k: int = Field(default=50, validation_alias="RECALL_TOP_K")
+    daily_recommendation_limit: int = Field(
+        default=20, validation_alias="DAILY_RECOMMENDATION_LIMIT"
+    )
+
     @property
     def sync_database_url(self) -> str:
         """Alembic 等同步场景使用的 DSN（psycopg 驱动）。"""

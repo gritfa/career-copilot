@@ -242,6 +242,57 @@ a {
   word-break: break-word;
 }
 
+/* 分项分数条（颜色不是唯一表达，旁边必须有数字文本） */
+.bar {
+  background: rgba(127, 127, 127, 0.25);
+  border-radius: 4px;
+  height: 8px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.bar-fill {
+  background: #2563eb;
+  height: 100%;
+}
+
+/* 筛选条 */
+.filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin: 16px 0;
+}
+
+.filters .field {
+  margin: 0;
+  min-width: 130px;
+  flex: 1;
+}
+
+/* 统计卡片行 */
+.stat-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+
+.stat {
+  flex: 1;
+  min-width: 120px;
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.stat .stat-value {
+  font-size: 22px;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
 /* 二次确认弹层 */
 .overlay {
   position: fixed;
