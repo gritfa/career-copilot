@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     # 具体模型 ID 走配置 + allowlist 管理，不写死不可追踪的 latest（docs/07 第 7.2 节）
     deepseek_model_id: str = Field(default="deepseek-chat", validation_alias="DEEPSEEK_MODEL_ID")
     llm_model_allowlist: list[str] = Field(
-        default=["deepseek-chat", "synthetic-analysis@1"],
+        default=["deepseek-chat", "synthetic-analysis@1", "synthetic-tailor@1"],
         validation_alias="LLM_MODEL_ALLOWLIST",
     )
     llm_timeout_seconds: float = Field(default=60.0, validation_alias="LLM_TIMEOUT_SECONDS")
@@ -145,6 +145,16 @@ class Settings(BaseSettings):
     # 每账号每日手动深度分析次数（docs/07 第 8.3 节；自动触发按 ADR-001 D2 推迟）
     analysis_manual_daily_limit: int = Field(
         default=3, validation_alias="ANALYSIS_MANUAL_DAILY_LIMIT"
+    )
+
+    # ---- 阶段 7：定制简历 / DOCX-PDF 导出 ----
+    # 每用户每日最多创建的新定制版本数（编辑/确认/重新导出不计数，docs/04 第 11 节）
+    resume_tailor_daily_limit: int = Field(
+        default=3, validation_alias="RESUME_TAILOR_DAILY_LIMIT"
+    )
+    # 导出文件保留时长（秒）：过期即清理，不留服务器长期副本（docs/03 第 10 节语义）
+    resume_export_ttl_seconds: int = Field(
+        default=900, validation_alias="RESUME_EXPORT_TTL_SECONDS"
     )
 
     @property

@@ -1140,6 +1140,143 @@ class UsageLedger(Base):
     )
 
 
+# ---------------- 阶段 7：简历版本与导出（docs/03 第 4 节 resume_versions） ----------------
+
+RESUME_VERSION_KINDS = ("plan_base", "job_tailored")
+RESUME_VERSION_STATUSES = ("generating", "draft", "confirmed", "failed", "deleted")
+RESUME_VERSION_CREATORS = ("user", "agent_draft")
+RESUME_EXPORT_FORMATS = ("docx", "pdf")
+RESUME_EXPORT_STATUSES = ("queued", "running", "succeeded", "failed")
+
+
+class ResumeVersion(Base):
+    """简历版本（岗位定制草稿 → 用户确认 → 导出）。
+
+    红线：content_json 中每个条目必须绑定已确认 profile_fact 的 fact_id；
+    未确认候选事实绝不进入本表（服务端确定性校验强制）。
+    ADR-001 裁剪：MVP 只经 API 产生 job_tailored；plan_base 推迟。
+    """
+
+    __tablename__ = "resume_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    search_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("search_plans.id", ondelete="SET NULL")
+    )
+    canonical_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("canonical_jobs.id", ondelete="SET NULL")
+    )
+    recommendation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("recommendations.id", ondelete="SET NULL")
+    )
+    parent_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resume_versions.id", ondelete="SET NULL")
+    )
+    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="generating")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False)
+    # 定制内容（resume_content_v1）；失败绝不落半成品内容
+    content_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 每处 AI 调整：修改前/修改后/理由/岗位证据/fact IDs（可追溯）
+    changes_json: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    # 生成方式：provider/model/prompt_version（合成实现如实标注 not_verified）
+    generator_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    edited_by_user_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('plan_base', 'job_tailored')", name="ck_resume_versions_kind"
+        ),
+        CheckConstraint(
+            "status IN ('generating', 'draft', 'confirmed', 'failed', 'deleted')",
+            name="ck_resume_versions_status",
+        ),
+        CheckConstraint(
+            "created_by IN ('user', 'agent_draft')",
+            name="ck_resume_versions_created_by",
+        ),
+        # 确认必须有内容与确认时间；失败绝不留内容（不伪装完成）
+        CheckConstraint(
+            "NOT (status = 'confirmed' AND (content_json IS NULL OR confirmed_at IS NULL))",
+            name="ck_resume_versions_confirmed_has_content",
+        ),
+        CheckConstraint(
+            "NOT (status = 'failed' AND content_json IS NOT NULL)",
+            name="ck_resume_versions_failed_no_content",
+        ),
+        Index("ix_resume_versions_user_created", "user_id", "created_at"),
+        Index("ix_resume_versions_recommendation", "recommendation_id"),
+    )
+
+
+class ResumeExport(Base):
+    """DOCX/PDF 异步导出：短时下载、过期清理，不留服务器长期副本。
+
+    storage_key 只含 UUID（无邮箱/姓名/原文件名）；下载走限时签名链接。
+    """
+
+    __tablename__ = "resume_exports"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    resume_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("resume_versions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    format: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    storage_key: Mapped[str | None] = mapped_column(String(255), unique=True)
+    file_sha256: Mapped[str | None] = mapped_column(String(64))
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    # 文件保留截止：过期后文件删除（file_purged_at 记录清理时间），行保留为审计痕迹
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    file_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("format IN ('docx', 'pdf')", name="ck_resume_exports_format"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed')",
+            name="ck_resume_exports_status",
+        ),
+        # 成功必须有文件三元组（key/哈希/过期时间），失败绝不留 key
+        CheckConstraint(
+            "NOT (status = 'succeeded' AND (storage_key IS NULL "
+            "OR file_sha256 IS NULL OR expires_at IS NULL))",
+            name="ck_resume_exports_succeeded_has_file",
+        ),
+        CheckConstraint(
+            "NOT (status = 'failed' AND storage_key IS NOT NULL)",
+            name="ck_resume_exports_failed_no_file",
+        ),
+        Index("ix_resume_exports_version", "resume_version_id"),
+        Index("ix_resume_exports_user_created", "user_id", "created_at"),
+    )
+
+
 # ---------------- 阶段 6：单模型标准分析（docs/03 第 7 节 agent_runs） ----------------
 
 AGENT_RUN_STATUSES = ("queued", "analyzing", "validating", "completed", "failed")

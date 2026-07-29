@@ -21,6 +21,7 @@ from app.privacy.router import router as privacy_router
 from app.resumes.facts_router import router as facts_router
 from app.resumes.router import router as resumes_router
 from app.search_plans.router import router as search_plans_router
+from app.tailoring.router import router as tailoring_router
 
 
 @asynccontextmanager
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(jobs_router)
     api_v1.include_router(recommendations_router)
     api_v1.include_router(agents_router)
+    api_v1.include_router(tailoring_router)
     api_v1.include_router(admin_router)
     app.include_router(api_v1)
     return app

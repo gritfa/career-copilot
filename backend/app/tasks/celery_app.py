@@ -39,6 +39,7 @@ def create_celery_app() -> Celery:
             "app.jobs.tasks",
             "app.matching.tasks",
             "app.agents.tasks",
+            "app.tailoring.tasks",
         ),
         broker_connection_retry_on_startup=True,
         # 岗位来源：全局每天一次（docs/06 第 5 节）；各来源在任务内随机抖动错峰

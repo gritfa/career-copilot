@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
 import { AnalysisSection } from "@/components/AnalysisSection";
+import { TailorSection } from "@/components/TailorSection";
 import { FeedbackActions } from "@/components/RecommendationCard";
 import {
   HARD_STATUS_META,
@@ -134,15 +135,7 @@ function DetailBody({ rec }: { rec: Recommendation }) {
         <FeedbackActions recommendationId={rec.id} initial={parseFeedback(rec)} />
       </div>
 
-      <h2>定制简历</h2>
-      <div className="card">
-        <button type="button" className="btn btn-primary" disabled>
-          生成定制简历
-        </button>
-        <p className="muted" style={{ marginTop: 6 }}>
-          岗位定制简历将在阶段 7 开放。
-        </p>
-      </div>
+      <TailorSection recommendationId={rec.id} />
     </>
   );
 }

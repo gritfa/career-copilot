@@ -23,6 +23,7 @@ dependencies = [
     "python-multipart>=0.0.18",
     "pgvector>=0.3.6",
     "httpx>=0.28",
+    "reportlab>=4.2",
 ]
 
 [dependency-groups]
@@ -32,7 +33,6 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
-    "reportlab>=4.2",
 ]
 
 [build-system]
