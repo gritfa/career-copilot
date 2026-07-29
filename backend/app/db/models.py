@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -20,9 +21,11 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
+    UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -35,6 +38,15 @@ CONSENT_PROVIDERS = ("deepseek", "qwen", "analytics", "support")
 CONSENT_SCOPES = ("full_resume", "deidentified", "profile_fields")
 ACTOR_TYPES = ("user", "admin", "system", "anonymous")
 AUDIT_RESULTS = ("success", "denied", "failure")
+
+SEARCH_PLAN_STATUSES = ("active", "paused", "archived")
+COMPANY_PREFERENCES = ("follow", "priority", "block")
+JOB_SOURCE_TYPES = ("company_site", "platform", "user_import")
+JOB_SOURCE_STATUSES = ("enabled", "paused", "circuit_open", "disabled")
+SOURCE_RUN_STATUSES = ("running", "success", "partial_failure", "failed")
+JOB_POSTING_STATUSES = ("active", "inactive", "unknown")
+DEDUPE_STATUSES = ("unique", "merged", "pending_review")
+CANONICAL_REVIEW_STATUSES = ("auto", "pending_review", "confirmed")
 
 RESUME_STATUSES = ("uploaded", "parsing", "parsed", "parse_failed", "deleting", "deleted")
 MALWARE_SCAN_STATUSES = ("pending", "clean", "infected", "skipped_not_configured")
@@ -423,4 +435,435 @@ class FactEvidence(Base):
     __table_args__ = (
         Index("ix_fact_evidence_fact_id", "profile_fact_id"),
         Index("ix_fact_evidence_resume_id", "resume_id"),
+    )
+
+
+# ---------------- 阶段 4：求职方案 / 岗位来源与标准化（docs/03 第 5、6 节） ----------------
+
+
+class SearchPlan(Base):
+    """求职方案：每用户最多 3 个 active（DB 触发器 + 事务级 advisory lock 双保险）。"""
+
+    __tablename__ = "search_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    role_family: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    city_codes: Mapped[list[str]] = mapped_column(ARRAY(String(12)), nullable=False)
+    work_modes: Mapped[list[str]] = mapped_column(ARRAY(String(16)), nullable=False)
+    # 薪资：第一版只接受 CNY 月薪（docs/04 第 5 节）
+    salary_currency: Mapped[str] = mapped_column(String(8), nullable=False, default="CNY")
+    minimum_monthly_salary: Mapped[int | None] = mapped_column(Integer)
+    target_monthly_salary: Mapped[int | None] = mapped_column(Integer)
+    salary_months_preference: Mapped[int | None] = mapped_column(Integer)
+    minimum_match_score: Mapped[int] = mapped_column(Integer, nullable=False, default=65)
+    allow_outsourcing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # resume_versions 属阶段 7；先留 UUID 引用，不建 FK
+    base_resume_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'archived')", name="ck_search_plans_status"
+        ),
+        CheckConstraint("salary_currency = 'CNY'", name="ck_search_plans_currency_cny"),
+        CheckConstraint(
+            "minimum_monthly_salary IS NULL OR minimum_monthly_salary > 0",
+            name="ck_search_plans_min_salary_positive",
+        ),
+        CheckConstraint(
+            "target_monthly_salary IS NULL OR target_monthly_salary > 0",
+            name="ck_search_plans_target_salary_positive",
+        ),
+        CheckConstraint(
+            "minimum_monthly_salary IS NULL OR target_monthly_salary IS NULL "
+            "OR minimum_monthly_salary <= target_monthly_salary",
+            name="ck_search_plans_min_le_target",
+        ),
+        CheckConstraint(
+            "salary_months_preference IS NULL "
+            "OR salary_months_preference BETWEEN 12 AND 18",
+            name="ck_search_plans_salary_months_range",
+        ),
+        CheckConstraint(
+            "minimum_match_score BETWEEN 0 AND 100",
+            name="ck_search_plans_match_score_range",
+        ),
+        Index("ix_search_plans_user_id", "user_id"),
+    )
+
+
+class Company(Base):
+    """公司主数据：规范名 + 别名 + 官方域名（docs/03 第 6 节）。"""
+
+    __tablename__ = "companies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    canonical_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    aliases: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    official_domain: Mapped[str | None] = mapped_column(String(255))
+    city_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String(12)))
+    verification_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unverified"
+    )
+    source_refs_json: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "verification_status IN ('unverified', 'verified')",
+            name="ck_companies_verification_status",
+        ),
+    )
+
+
+class CompanyPreference(Base):
+    """方案级公司偏好：屏蔽优先级高于关注和算法分数（匹配阶段实施）。"""
+
+    __tablename__ = "company_preferences"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    search_plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("search_plans.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    preference: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "preference IN ('follow', 'priority', 'block')",
+            name="ck_company_preferences_preference",
+        ),
+        UniqueConstraint(
+            "search_plan_id", "company_id", name="uq_company_preferences_plan_company"
+        ),
+    )
+
+
+class LearnedPreference(Base):
+    """反馈学习偏好骨架：版本化，可一键重置；不覆盖用户直接配置。"""
+
+    __tablename__ = "learned_preferences"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    weights_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    derived_from: Mapped[str] = mapped_column(String(64), nullable=False, default="feedback")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'reset')", name="ck_learned_preferences_status"
+        ),
+        Index("ix_learned_preferences_user_id", "user_id"),
+    )
+
+
+class JobSource(Base):
+    """岗位来源注册表：能力/政策状态如实记录，未验证不得标 ready。"""
+
+    __tablename__ = "job_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="enabled")
+    access_policy_url: Mapped[str | None] = mapped_column(String(255))
+    robots_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terms_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rate_limit_config: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    capabilities_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ('company_site', 'platform', 'user_import')",
+            name="ck_job_sources_source_type",
+        ),
+        CheckConstraint(
+            "status IN ('enabled', 'paused', 'circuit_open', 'disabled')",
+            name="ck_job_sources_status",
+        ),
+    )
+
+
+class SourceRun(Base):
+    """来源运行统计：任一条目失败时状态不得为 success（规格硬约束）。"""
+
+    __tablename__ = "source_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    job_source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    run_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="running")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    items_seen: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    items_new: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    items_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'success', 'partial_failure', 'failed')",
+            name="ck_source_runs_status",
+        ),
+        # 不变量：有条目失败绝不允许绿色 success
+        CheckConstraint(
+            "NOT (status = 'success' AND items_failed > 0)",
+            name="ck_source_runs_success_requires_no_failures",
+        ),
+        UniqueConstraint("job_source_id", "run_key", name="uq_source_runs_source_run_key"),
+    )
+
+
+class JobSnapshot(Base):
+    """不可变原始证据：DB 只存 key + 哈希，原始内容在对象存储。
+
+    迁移里加触发器阻止 UPDATE/DELETE；人工修正只能写派生层。
+    """
+
+    __tablename__ = "job_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    job_source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    http_meta_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_job_snapshots_source_id", "job_source_id"),
+        Index("ix_job_snapshots_content_hash", "content_hash"),
+    )
+
+
+class CanonicalJob(Base):
+    """去重合并后的岗位主体；企业官网优先主来源，保留全部来源链接。"""
+
+    __tablename__ = "canonical_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    title_normalized: Mapped[str] = mapped_column(String(255), nullable=False)
+    role_family: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL")
+    )
+    city_code: Mapped[str | None] = mapped_column(String(12))
+    # 主展示来源 posting；与 job_postings 循环引用，不建 FK
+    primary_posting_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    dedupe_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    dedupe_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="auto")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "review_status IN ('auto', 'pending_review', 'confirmed')",
+            name="ck_canonical_jobs_review_status",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive', 'unknown')",
+            name="ck_canonical_jobs_status",
+        ),
+        Index("ix_canonical_jobs_company_city", "company_id", "city_code"),
+    )
+
+
+class JobPosting(Base):
+    """来源级岗位（标准化派生层，可更新）；原始证据在 job_snapshots。"""
+
+    __tablename__ = "job_postings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    job_source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    source_job_id: Mapped[str | None] = mapped_column(String(128))
+    canonical_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("canonical_jobs.id", ondelete="SET NULL")
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL")
+    )
+    title_raw: Mapped[str] = mapped_column(String(255), nullable=False)
+    title_normalized: Mapped[str] = mapped_column(String(255), nullable=False)
+    role_family: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    role_family_confidence: Mapped[float | None] = mapped_column(Float)
+    description_text: Mapped[str | None] = mapped_column(Text)
+    city_code: Mapped[str | None] = mapped_column(String(12))
+    city_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    work_mode: Mapped[str | None] = mapped_column(String(16))
+    employment_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    salary_min: Mapped[int | None] = mapped_column(Integer)
+    salary_max: Mapped[int | None] = mapped_column(Integer)
+    salary_months: Mapped[int | None] = mapped_column(Integer)
+    salary_unknown: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    salary_raw: Mapped[str | None] = mapped_column(String(120))
+    salary_confidence: Mapped[float | None] = mapped_column(Float)
+    experience_min: Mapped[int | None] = mapped_column(Integer)
+    experience_max: Mapped[int | None] = mapped_column(Integer)
+    experience_type: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    education_level: Mapped[str | None] = mapped_column(String(32))
+    education_requirement_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown"
+    )
+    outsourcing_signals: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    dedupe_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unique")
+    dedupe_candidate_canonical_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True)
+    )
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_snapshots.id", ondelete="SET NULL")
+    )
+    imported_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    normalizer_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'inactive', 'unknown')", name="ck_job_postings_status"
+        ),
+        CheckConstraint(
+            "dedupe_status IN ('unique', 'merged', 'pending_review')",
+            name="ck_job_postings_dedupe_status",
+        ),
+        CheckConstraint(
+            "city_kind IN ('city', 'remote', 'nationwide', 'other', 'unknown')",
+            name="ck_job_postings_city_kind",
+        ),
+        CheckConstraint(
+            "employment_type IN ('full_time', 'other', 'unknown')",
+            name="ck_job_postings_employment_type",
+        ),
+        CheckConstraint(
+            "experience_type IN ('range', 'fresh_grad', 'unrestricted', 'unknown')",
+            name="ck_job_postings_experience_type",
+        ),
+        CheckConstraint(
+            "education_requirement_type IN ('required', 'preferred', 'unknown')",
+            name="ck_job_postings_education_req_type",
+        ),
+        # 薪资不确定时不得伪造数值（面议 → salary_unknown 且无 min/max）
+        CheckConstraint(
+            "NOT (salary_unknown AND (salary_min IS NOT NULL OR salary_max IS NOT NULL))",
+            name="ck_job_postings_unknown_salary_no_values",
+        ),
+        Index(
+            "uq_job_postings_source_job",
+            "job_source_id",
+            "source_job_id",
+            unique=True,
+            postgresql_where=text("source_job_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_job_postings_source_url",
+            "job_source_id",
+            "source_url",
+            unique=True,
+            postgresql_where=text("source_job_id IS NULL AND source_url IS NOT NULL"),
+        ),
+        Index("ix_job_postings_canonical", "canonical_job_id"),
+        Index("ix_job_postings_company_title_city", "company_id", "title_normalized", "city_code"),
     )

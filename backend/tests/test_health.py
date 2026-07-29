@@ -1,7 +1,9 @@
 """健康端点语义测试（无真实 DB/Redis）。"""
 
 EXPECTED_CAPABILITIES = {
-    "job_source",
+    "job_source:fixture_a",
+    "job_source:fixture_b",
+    "job_source:boss",
     "deepseek_generation",
     "qwen_fallback",
     "aliyun_embedding",
@@ -14,6 +16,9 @@ EXPECTED_CAPABILITIES = {
 
 # 阶段 3：只有本机真实解析集成测试通过的两项才允许 ready
 READY_CAPABILITIES = {"resume_parse_pdf", "resume_parse_docx"}
+
+# 阶段 4：BOSS 无允许的自动访问方式，能力如实标 import_only（绝不显示采集正常）
+IMPORT_ONLY_CAPABILITIES = {"job_source:boss"}
 
 
 async def test_live_returns_200_without_dependencies(client):
@@ -33,6 +38,10 @@ async def test_capabilities_only_verified_ready(client):
     for name, status in caps.items():
         if name in READY_CAPABILITIES:
             assert status == "ready", f"capability {name} verified in phase 3, got {status}"
+        elif name in IMPORT_ONLY_CAPABILITIES:
+            assert status == "import_only", (
+                f"capability {name} must be import_only, got {status}"
+            )
         else:
             assert status == "not_verified", (
                 f"capability {name} must be not_verified, got {status}"

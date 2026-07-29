@@ -24,9 +24,13 @@ _ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
 # 能力矩阵：状态只允许在真实验证通过后由对应阶段改为 ready / degraded / disabled。
 # 阶段 3：resume_parse_pdf / resume_parse_docx 经本机真实容器集成测试
 # （合成 PDF/DOCX 上传 → Celery 解析 → 候选 → 确认全流程）验证通过，标记 ready。
-# 模型/来源/导出等能力仍未真实验证，保持 not_verified。
+# 阶段 4：fixture 连接器只是合成数据（ADR-001 D1，真实来源政策调查未完成），
+# 如实标 not_verified；BOSS 无允许的自动访问方式，只有 link-out/导入 → import_only。
+# 模型/导出等能力仍未真实验证，保持 not_verified。
 CAPABILITIES: dict[str, str] = {
-    "job_source": "not_verified",
+    "job_source:fixture_a": "not_verified",
+    "job_source:fixture_b": "not_verified",
+    "job_source:boss": "import_only",
     "deepseek_generation": "not_verified",
     "qwen_fallback": "not_verified",
     "aliyun_embedding": "not_verified",

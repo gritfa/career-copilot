@@ -9,6 +9,7 @@
 from typing import Any
 
 from celery import Celery, Task
+from celery.schedules import crontab
 
 from app.core.config import get_settings
 
@@ -33,8 +34,15 @@ def create_celery_app() -> Celery:
         task_soft_time_limit=240,
         task_always_eager=settings.celery_task_always_eager,
         task_eager_propagates=False,
-        imports=("app.resumes.tasks",),
+        imports=("app.resumes.tasks", "app.jobs.tasks"),
         broker_connection_retry_on_startup=True,
+        # 岗位来源：全局每天一次（docs/06 第 5 节）；各来源在任务内随机抖动错峰
+        beat_schedule={
+            "daily-job-source-sync": {
+                "task": "jobs.sync_all_sources",
+                "schedule": crontab(hour=3, minute=30),
+            },
+        },
     )
     return celery
 

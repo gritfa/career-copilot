@@ -14,9 +14,11 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import RequestIDMiddleware, configure_logging
 from app.core.redis import close_redis
 from app.db.session import dispose_engine
+from app.jobs.router import router as jobs_router
 from app.privacy.router import router as privacy_router
 from app.resumes.facts_router import router as facts_router
 from app.resumes.router import router as resumes_router
+from app.search_plans.router import router as search_plans_router
 
 
 @asynccontextmanager
@@ -48,6 +50,8 @@ def create_app() -> FastAPI:
     api_v1.include_router(privacy_router)
     api_v1.include_router(resumes_router)
     api_v1.include_router(facts_router)
+    api_v1.include_router(search_plans_router)
+    api_v1.include_router(jobs_router)
     api_v1.include_router(admin_router)
     app.include_router(api_v1)
     return app
