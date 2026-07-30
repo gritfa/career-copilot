@@ -14,7 +14,8 @@ from datetime import UTC, datetime
 from datetime import time as dtime
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import func, select
+from pydantic import TypeAdapter
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.schemas import (
@@ -22,6 +23,8 @@ from app.agents.schemas import (
     OUTPUT_SCHEMA_VERSION,
     AgentRunListOut,
     AgentRunOut,
+    AgentRunStatus,
+    AgentRunTrigger,
     StandardAnalysisReport,
 )
 from app.agents.service import provider_verified
@@ -29,7 +32,7 @@ from app.agents.tasks import run_standard_analysis_task
 from app.auth.deps import AuthContext, require_active_user, require_user
 from app.core.errors import AppError
 from app.core.quotas import effective_limit
-from app.db.models import AgentRun, Recommendation, SearchPlan
+from app.db.models import AgentRun, CanonicalJob, Recommendation, SearchPlan
 from app.db.session import get_db
 from app.integrations.llm_gateway import get_llm_adapter
 from app.tasks.celery_app import dispatch_task
@@ -40,6 +43,10 @@ _NOT_FOUND = AppError(code="NOT_FOUND", message="资源不存在", status_code=4
 
 _ACTIVE_STATUSES = ("queued", "analyzing", "validating")
 
+# DB 存 str（有 CHECK 约束），出参 Literal：运行时真校验，非静态断言
+_STATUS_ADAPTER: TypeAdapter[AgentRunStatus] = TypeAdapter(AgentRunStatus)
+_TRIGGER_ADAPTER: TypeAdapter[AgentRunTrigger] = TypeAdapter(AgentRunTrigger)
+
 
 def _run_out(run: AgentRun) -> AgentRunOut:
     report = None
@@ -48,8 +55,8 @@ def _run_out(run: AgentRun) -> AgentRunOut:
     return AgentRunOut(
         id=run.id,
         recommendation_id=run.recommendation_id,
-        status=run.status,
-        trigger=run.trigger,
+        status=_STATUS_ADAPTER.validate_python(run.status),
+        trigger=_TRIGGER_ADAPTER.validate_python(run.trigger),
         provider=run.provider,
         model_id=(run.model_map_json or {}).get("standard_analysis"),
         verified=provider_verified(run.provider),
@@ -69,7 +76,16 @@ async def _get_owned_recommendation(
         await db.execute(
             select(Recommendation, SearchPlan)
             .join(SearchPlan, SearchPlan.id == Recommendation.search_plan_id)
+            .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
             .where(Recommendation.id == rec_id)
+            # 岗位可见性与 /jobs、/recommendations 同一规则（P-1 第 2 项）：
+            # 分析报告含岗位原文片段（job_span），岗位转私有/属主注销后不得再触达
+            .where(
+                or_(
+                    CanonicalJob.visibility == "global",
+                    CanonicalJob.owner_user_id == ctx.user.id,
+                )
+            )
         )
     ).first()
     if row is None or row[1].user_id != ctx.user.id:
@@ -158,7 +174,19 @@ async def get_agent_run(
 ) -> AgentRunOut:
     """任务状态与最终报告；无内部对话/思维链可查。"""
     run = (
-        await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+        await db.execute(
+            select(AgentRun)
+            .join(Recommendation, Recommendation.id == AgentRun.recommendation_id)
+            .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
+            .where(AgentRun.id == run_id)
+            # 报告含岗位原文片段：岗位不可见后同样 404（与推荐详情同一口径）
+            .where(
+                or_(
+                    CanonicalJob.visibility == "global",
+                    CanonicalJob.owner_user_id == ctx.user.id,
+                )
+            )
+        )
     ).scalar_one_or_none()
     if run is None or run.user_id != ctx.user.id:
         raise _NOT_FOUND

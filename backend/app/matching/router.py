@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import TypeAdapter
-from sqlalchemy import delete, or_, select
+from sqlalchemy import ColumnElement, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit
@@ -72,6 +72,17 @@ def _decode_cursor(cursor: str) -> tuple[date, int, uuid.UUID]:
         ) from exc
 
 
+def _job_visible_to(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """岗位对该用户可见：global，或 private 且属主本人（与 /jobs 系列同一规则）。
+
+    岗位转私有/属主注销后，历史推荐不得继续暴露岗位内容（P-1 第 2 项）。
+    """
+    return or_(
+        CanonicalJob.visibility == "global",
+        CanonicalJob.owner_user_id == user_id,
+    )
+
+
 async def _get_owned_recommendation(
     db: AsyncSession, rec_id: uuid.UUID, ctx: AuthContext
 ) -> tuple[Recommendation, SearchPlan]:
@@ -79,11 +90,13 @@ async def _get_owned_recommendation(
         await db.execute(
             select(Recommendation, SearchPlan)
             .join(SearchPlan, SearchPlan.id == Recommendation.search_plan_id)
+            .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
             .where(Recommendation.id == rec_id)
+            .where(_job_visible_to(ctx.user.id))
         )
     ).first()
     if row is None or row[1].user_id != ctx.user.id:
-        raise _NOT_FOUND  # 越权与不存在同样返回 404，不泄露存在性
+        raise _NOT_FOUND  # 越权/岗位不可见与不存在同样返回 404，不泄露存在性
     return row[0], row[1]
 
 
@@ -116,7 +129,9 @@ async def list_recommendations(
     stmt = (
         select(Recommendation, SearchPlan)
         .join(SearchPlan, SearchPlan.id == Recommendation.search_plan_id)
+        .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
         .where(SearchPlan.user_id == ctx.user.id)
+        .where(_job_visible_to(ctx.user.id))
         .order_by(
             Recommendation.recommended_on.desc(),
             Recommendation.rank.asc(),
