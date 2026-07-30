@@ -42,3 +42,6 @@ yarn-error.log*
 *.tmp
 tmp/
 .cache/
+
+# ---------- 一键 Demo（demo.sh / demo.ps1）运行时产物 ----------
+.demo/
