@@ -6,6 +6,8 @@
 """
 
 import asyncio
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
+from app.integrations.llm_gateway import DeepSeekAdapter
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -37,9 +40,6 @@ CAPABILITIES: dict[str, str] = {
     "job_source:fixture_a": "not_verified",
     "job_source:fixture_b": "not_verified",
     "job_source:boss": "import_only",
-    "deepseek_generation": "not_verified",
-    "qwen_fallback": "not_verified",
-    "aliyun_embedding": "not_verified",
     "matching_basic": "ready",
     "standard_analysis": "not_verified",
     "resume_parse_pdf": "ready",
@@ -48,6 +48,93 @@ CAPABILITIES: dict[str, str] = {
     "pdf_export": "not_verified",
     "email_magic_link": "not_verified",
 }
+
+# ---------------- 模型能力三态（docs/15 P0 第 3 条） ----------------
+#
+# 模型能力（deepseek_generation / qwen_fallback / aliyun_embedding）不再用单一
+# 字符串，而是三个相互独立的维度：
+#   1. configured      —— 当前进程环境里有 key（不代表 key 有效）；
+#   2. runtime         —— 最近一次运行健康探测（GET /models，TTL 缓存）的结果：
+#                         available / unavailable / not_probed；
+#   3. last_verified   —— 历史验证证据：某日实跑全链路成功并留档 docs 的记录。
+#                         **只是历史证据，绝不因某台机器成功跑过一次就把当前
+#                         状态永久写成 verified**——当前可用性只看前两态。
+# 汇总 status 只由前两态推导：not_configured / configured / available / unavailable。
+_MODEL_PROBE_TTL_SECONDS = 600.0
+
+# 历史验证证据（脱敏留档见 docs/16-real-model-verification.md）；
+# 未验证的能力必须为 None，不许占位。
+MODEL_VERIFICATION_EVIDENCE: dict[str, dict[str, str] | None] = {
+    "deepseek_generation": None,
+    "qwen_fallback": None,
+    "aliyun_embedding": None,
+}
+
+# 探测结果缓存：capability -> (wall_time, "available"/"unavailable")
+_probe_cache: dict[str, tuple[float, str]] = {}
+
+
+def reset_probe_cache() -> None:
+    """测试与进程内配置变更后清空运行探测缓存。"""
+    _probe_cache.clear()
+
+
+def _deepseek_runtime(configured: bool) -> tuple[str, str | None]:
+    """运行可用探测（带 TTL 缓存）；未配置时不发任何网络请求。"""
+    if not configured:
+        return "not_probed", None
+    cached = _probe_cache.get("deepseek_generation")
+    now = time.time()
+    if cached is not None and now - cached[0] < _MODEL_PROBE_TTL_SECONDS:
+        checked_at = datetime.fromtimestamp(cached[0], tz=UTC).isoformat()
+        return cached[1], checked_at
+    status = "available" if DeepSeekAdapter().probe_runtime() else "unavailable"
+    _probe_cache["deepseek_generation"] = (now, status)
+    return status, datetime.fromtimestamp(now, tz=UTC).isoformat()
+
+
+def _summary_status(configured: bool, runtime: str) -> str:
+    if not configured:
+        return "not_configured"
+    if runtime == "available":
+        return "available"
+    if runtime == "unavailable":
+        return "unavailable"
+    return "configured"
+
+
+def _model_capabilities() -> dict[str, dict[str, Any]]:
+    settings = get_settings()
+    deepseek_configured = bool(settings.deepseek_api_key)
+    runtime, checked_at = _deepseek_runtime(deepseek_configured)
+    return {
+        "deepseek_generation": {
+            "status": _summary_status(deepseek_configured, runtime),
+            "configured": deepseek_configured,
+            "runtime": runtime,
+            "runtime_checked_at": checked_at,
+            # 无 key 时 Gateway 自动落回确定性合成实现（如实声明当前产出来源）
+            "active_adapter": "deepseek" if deepseek_configured else "synthetic",
+            "last_verified": MODEL_VERIFICATION_EVIDENCE["deepseek_generation"],
+        },
+        "qwen_fallback": {
+            "status": "not_configured",
+            "configured": False,
+            "runtime": "not_probed",
+            "runtime_checked_at": None,
+            "active_adapter": None,  # 备用供应商未实现 Adapter
+            "last_verified": MODEL_VERIFICATION_EVIDENCE["qwen_fallback"],
+        },
+        "aliyun_embedding": {
+            "status": _summary_status(bool(settings.dashscope_api_key), "not_probed"),
+            "configured": bool(settings.dashscope_api_key),
+            "runtime": "not_probed",
+            "runtime_checked_at": None,
+            # Embedding 仍为确定性合成向量（docs/15 P0 第 5 条，如实标注）
+            "active_adapter": "synthetic",
+            "last_verified": MODEL_VERIFICATION_EVIDENCE["aliyun_embedding"],
+        },
+    }
 
 
 def _safe_reason(exc: BaseException) -> str:
@@ -145,5 +232,11 @@ async def ready(response: Response) -> dict[str, Any]:
 
 @router.get("/capabilities")
 async def capabilities() -> dict[str, Any]:
-    """能力矩阵：服务存活不代表任何来源/模型/导出能力可用。"""
-    return {"capabilities": dict(CAPABILITIES)}
+    """能力矩阵：服务存活不代表任何来源/模型/导出能力可用。
+
+    模型能力为三态对象（configured / runtime / last_verified），
+    其余能力保持字符串状态。
+    """
+    merged: dict[str, Any] = dict(CAPABILITIES)
+    merged.update(_model_capabilities())
+    return {"capabilities": merged}
