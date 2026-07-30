@@ -1,0 +1,302 @@
+{
+  "schema_version": "1",
+  "run_id": "20260730T040859Z-probe-6b552ce2",
+  "command": "probe",
+  "data_origin": "live",
+  "started_at": "2026-07-30T04:07:55+00:00",
+  "completed_at": "2026-07-30T04:08:59+00:00",
+  "user_agent": "CareerCopilotSpike/0.1 (+contact: careers-spike@placeholder.invalid)",
+  "sources": {
+    "bytedance": {
+      "checked_at": "2026-07-30T04:08:05+00:00",
+      "parser_version": "1",
+      "robots_url": "https://jobs.bytedance.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/experienced",
+        "entry_path_allowed": true,
+        "content_hash": "f4a40337a0d0f4c4bc5115b583e669f67de37b7b594c5518b9b2930bdc27327d"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://jobs.bytedance.com/experienced",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "d7b5df0c0bd42e8f5eeaa62165c8b882a47534ab60a1e651bc6d10b80d19f62e"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "tencent": {
+      "checked_at": "2026-07-30T04:08:09+00:00",
+      "parser_version": "1",
+      "robots_url": "https://careers.tencent.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/search.html",
+        "entry_path_allowed": true,
+        "content_hash": "e1e16945205e1aa3ec1db4b4ae8ebe5fba6d1659e5d63a164e9701883614650e"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://careers.tencent.com/search.html",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "731ce582957edc11b934e98421fe80b3995fafc08c8dc1f9a18c832d2ff580a5"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "alibaba": {
+      "checked_at": "2026-07-30T04:08:12+00:00",
+      "parser_version": "1",
+      "robots_url": "https://talent.alibaba.com/robots.txt",
+      "robots": {
+        "status": "no_robots",
+        "http_status": 404,
+        "entry_path_allowed": true
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://talent.alibaba.com/",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "6ca34219d5776472f84faf1578cac7273f5bdf0f2a1ad1c236d5e74ef6efd2f1"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "antgroup": {
+      "checked_at": "2026-07-30T04:08:18+00:00",
+      "parser_version": "1",
+      "robots_url": "https://talent.antgroup.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/off-campus",
+        "entry_path_allowed": true,
+        "content_hash": "f1b967701dc1024f57cbeaa9392e6a2b505bb2522c65900e35123cc266f0ce34"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://talent.antgroup.com/off-campus",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "fbf5b1a209f6ede951c1e3f7f56a503956d635f41664ee578c227baad9f09153"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "huawei": {
+      "checked_at": "2026-07-30T04:08:24+00:00",
+      "parser_version": "1",
+      "robots_url": "https://career.huawei.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/reccampportal/portal5/social-recruitment.html",
+        "entry_path_allowed": true,
+        "content_hash": "3c40bf3805e39ae3c4fe56b879619e5f1a0e02bd7f1d6f85275a76257e18a636"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://career.huawei.com/reccampportal/portal5/social-recruitment.html",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "9c084e35fe8a30adf8a814f370362f580ee90c6e0146ca8440d7cca7e87adfbd"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "netease": {
+      "checked_at": "2026-07-30T04:08:28+00:00",
+      "parser_version": "1",
+      "robots_url": "https://hr.163.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/",
+        "entry_path_allowed": true,
+        "content_hash": "02feea404c44f8d70363c9f06e9bb9d827982cc198d44c2302757ca003fecf05"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://hr.163.com/",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "02feea404c44f8d70363c9f06e9bb9d827982cc198d44c2302757ca003fecf05"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "meituan": {
+      "checked_at": "2026-07-30T04:08:35+00:00",
+      "parser_version": "1",
+      "robots_url": "https://zhaopin.meituan.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/web/position",
+        "entry_path_allowed": true,
+        "content_hash": "ace4d3b85878849e498597dac896b9443a39034ab2118f72d6014a2aad7a0bdb"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://zhaopin.meituan.com/web/position",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "ace4d3b85878849e498597dac896b9443a39034ab2118f72d6014a2aad7a0bdb"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "xiaomi": {
+      "checked_at": "2026-07-30T04:08:41+00:00",
+      "parser_version": "1",
+      "robots_url": "https://hr.xiaomi.com/robots.txt",
+      "robots": {
+        "status": "no_robots",
+        "http_status": 404,
+        "entry_path_allowed": true
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://hr.xiaomi.com/job",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "ff686440ec60d9b77aebf04dde87bd5ad0764ffafd7e7eb50cc6e5bc7bd56b3d"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    },
+    "jd": {
+      "checked_at": "2026-07-30T04:08:51+00:00",
+      "parser_version": "1",
+      "robots_url": "https://zhaopin.jd.com/robots.txt",
+      "robots": {
+        "status": "allowed",
+        "http_status": 200,
+        "entry_path": "/web/job/job_index",
+        "entry_path_allowed": true,
+        "content_hash": "98cd8da76d9884ef7d733db9a63c3c8834afeaa353bd42375b5d9fa3028dc787"
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://passport.jd.com/new/login.aspx?ReturnUrl=https%3A%2F%2Fzhaopin.jd.com%2Ferror",
+        "redirected": true,
+        "requires_login": true,
+        "captcha_signal": true,
+        "static_parseable": false,
+        "content_hash": "1a45be90eacc3e14683c6a95dbfc42ad3115a161fad956bdbd10f50b5b8d0a89"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "blocked",
+      "status_reason": "requires_login：入口重定向到登录，绝不模拟登录"
+    },
+    "baidu": {
+      "checked_at": "2026-07-30T04:08:59+00:00",
+      "parser_version": "1",
+      "robots_url": "https://talent.baidu.com/robots.txt",
+      "robots": {
+        "status": "no_robots",
+        "http_status": 404,
+        "entry_path_allowed": true
+      },
+      "entry": {
+        "status": "reachable",
+        "http_status": 200,
+        "final_url": "https://talent.baidu.com/jobs/social-list",
+        "redirected": false,
+        "requires_login": false,
+        "captcha_signal": false,
+        "static_parseable": false,
+        "content_hash": "291aa6044c06361aeb022097539c0af6c88c275cfaf501706a7dd3b139c5a912"
+      },
+      "terms": {
+        "status": "not_located",
+        "note": "未找到公开条款页 URL，需负责人补充"
+      },
+      "terms_manual_review": "pending_owner_confirmation",
+      "status": "not_verified",
+      "status_reason": "terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问；js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
+    }
+  },
+  "summary": {
+    "probed": 10,
+    "verified": 0,
+    "not_verified": 9,
+    "blocked": 1
+  },
+  "requests_made": 20
+}

@@ -120,19 +120,18 @@ def _decide(
         return "blocked", "captcha_wall：页面含验证码信号，绝不绕过"
     if terms_v.get("prohibit_keyword_hits"):
         return "blocked", "terms_prohibit_signal：条款页出现禁止采集字样，待负责人判读"
+    # not_verified 的原因全部列出，便于负责人一次看清还差哪些前置条件
+    reasons: list[str] = []
     if robots_v["status"] == "unavailable":
-        return "not_verified", "robots_unavailable：robots.txt 不可达，政策不清不默认允许"
+        reasons.append("robots_unavailable：robots.txt 不可达，政策不清不默认允许")
     if source.terms_manual_review != "cleared":
-        return (
-            "not_verified",
-            "terms_pending_owner_confirmation：公开条款未经负责人判读，政策不清不自动访问",
-        )
+        reasons.append("terms_pending_owner_confirmation：公开条款未经负责人判读，不自动访问")
     if not entry_v.get("static_parseable"):
-        return (
-            "not_verified",
-            "js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；"
-            "逆向内部接口的许可未确认，不做",
+        reasons.append(
+            "js_rendered：列表为前端渲染，静态抓取拿不到岗位数据；逆向内部接口的许可未确认，不做"
         )
+    if reasons:
+        return "not_verified", "；".join(reasons)
     return "verified", "机器检查全过且条款判读通过"
 
 
