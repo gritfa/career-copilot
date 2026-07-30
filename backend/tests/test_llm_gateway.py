@@ -20,6 +20,7 @@ from app.integrations.llm_gateway import (
     LLMError,
     LLMModelNotAllowedError,
     LLMNotConfiguredError,
+    LLMProviderRejectedError,
     LLMRawResponse,
     LLMRequest,
     LLMSchemaError,
@@ -152,6 +153,103 @@ def test_retries_exhausted_raises(monkeypatch):
     with pytest.raises(LLMError):
         ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
     assert len(adapter.calls) == 3  # 1 + 2 次重试（LLM_MAX_RETRIES=2），不无限重放
+
+
+def test_provider_rejected_not_retried(monkeypatch):
+    """无效 key 类 4xx：立即失败，不重放、不降级合成（P0 失败路径）。"""
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter(
+        [LLMProviderRejectedError("deepseek rejected request: HTTP 401"), _ok()]
+    )
+    with pytest.raises(LLMProviderRejectedError):
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert len(adapter.calls) == 1  # 明确拒绝绝不重试
+
+
+def _fake_deepseek_response(status_code: int, payload: dict | None = None):
+    import httpx
+
+    def _post(url, **kwargs):
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code, request=request, json=payload or {})
+
+    return _post
+
+
+def test_deepseek_adapter_401_maps_to_rejected_without_key_leak(monkeypatch):
+    """真实 Adapter：401 → LLMProviderRejectedError，错误信息不含 key/正文。"""
+    fake_key = "sk-fake-invalid-key-for-test"
+    monkeypatch.setenv("DEEPSEEK_API_KEY", fake_key)
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        adapter = DeepSeekAdapter()
+        assert adapter.configured is True
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.post",
+            _fake_deepseek_response(401, {"error": {"message": "invalid api key"}}),
+        )
+        with pytest.raises(LLMProviderRejectedError) as exc_info:
+            adapter.complete(_request())
+        assert "401" in str(exc_info.value)
+        assert fake_key not in str(exc_info.value)
+        assert "invalid api key" not in str(exc_info.value)  # 响应体不进错误信息
+    finally:
+        get_settings.cache_clear()
+
+
+def test_deepseek_adapter_5xx_stays_retryable(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        adapter = DeepSeekAdapter()
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.post", _fake_deepseek_response(503)
+        )
+        with pytest.raises(LLMError) as exc_info:
+            adapter.complete(_request())
+        assert not isinstance(exc_info.value, LLMProviderRejectedError)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_probe_runtime(monkeypatch):
+    """运行可用探测：200 → True；网络失败/非 200 → False；无 key 不发请求。"""
+    import httpx as _httpx
+
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key")
+    get_settings.cache_clear()
+    try:
+        adapter = DeepSeekAdapter()
+
+        def _ok_get(url, **kwargs):
+            return _httpx.Response(200, request=_httpx.Request("GET", url))
+
+        monkeypatch.setattr("app.integrations.llm_gateway.httpx.get", _ok_get)
+        assert adapter.probe_runtime() is True
+
+        def _fail_get(url, **kwargs):
+            raise _httpx.ConnectError("boom")
+
+        monkeypatch.setattr("app.integrations.llm_gateway.httpx.get", _fail_get)
+        assert adapter.probe_runtime() is False
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+        get_settings.cache_clear()
+        unconfigured = DeepSeekAdapter()
+
+        def _explode(url, **kwargs):
+            raise AssertionError("未配置时不得发起探测请求")
+
+        monkeypatch.setattr("app.integrations.llm_gateway.httpx.get", _explode)
+        assert unconfigured.probe_runtime() is False
+    finally:
+        get_settings.cache_clear()
 
 
 # ---------------- Schema 校验：最多一次修复 ----------------

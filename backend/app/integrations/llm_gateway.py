@@ -51,6 +51,14 @@ class LLMSchemaError(LLMError):
     """结构化输出经一次修复后仍不符合 Schema（失败不得伪装完成）。"""
 
 
+class LLMProviderRejectedError(LLMError):
+    """供应商明确拒绝请求（4xx，如无效 key 401 / 无权 403），不可重试。
+
+    P0 失败路径验证要求：无效 key 必须干净地立即失败（不重放浪费额度、
+    不静默降级合成、错误信息不含 key/请求体）。429 限流除外（可重试）。
+    """
+
+
 class LLMModelNotAllowedError(LLMError):
     """模型 ID 不在 allowlist（docs/07 第 7.2 节，不可重试）。"""
 
@@ -155,6 +163,15 @@ class DeepSeekAdapter:
             )
             response.raise_for_status()
             payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            # 4xx（429 除外）= 供应商明确拒绝（无效 key/无权/参数错），重试无意义；
+            # 错误信息只含状态码，不含请求体/响应体/key
+            if 400 <= status < 500 and status != 429:
+                raise LLMProviderRejectedError(
+                    f"deepseek rejected request: HTTP {status}"
+                ) from exc
+            raise LLMError(f"deepseek call failed: HTTP {status}") from exc
         except httpx.HTTPError as exc:
             # 只记异常类型，不把请求体/响应体写日志（可能含正文）
             raise LLMError(f"deepseek call failed: {type(exc).__name__}") from exc
@@ -169,6 +186,24 @@ class DeepSeekAdapter:
             tokens_out=int(usage.get("completion_tokens", 0)),
             provider_request_id=payload.get("id"),
         )
+
+    def probe_runtime(self) -> bool:
+        """运行可用性轻量探测（capabilities 三态之「运行可用」）。
+
+        GET /models：零 token 费用，验证 key 当下有效且服务可达。
+        任何失败（网络/4xx/5xx）→ False，绝不抛异常、绝不记录响应正文。
+        """
+        if not self.configured:
+            return False
+        try:
+            response = httpx.get(
+                f"{self._base_url}/models",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=min(self._timeout, 10.0),
+            )
+        except httpx.HTTPError:
+            return False
+        return response.status_code == 200
 
 
 # ---------------- Gateway ----------------
@@ -314,8 +349,12 @@ class ModelGateway:
         for attempt in range(self._max_retries + 1):
             try:
                 return self.adapter.complete(request)
-            except (LLMNotConfiguredError, LLMAuthorizationError):
-                raise  # 不可重试
+            except (
+                LLMNotConfiguredError,
+                LLMAuthorizationError,
+                LLMProviderRejectedError,
+            ):
+                raise  # 不可重试（未配置/未授权/供应商明确拒绝）
             except LLMError as exc:
                 last_error = exc
                 logger.warning(
