@@ -41,10 +41,11 @@ git clone <本仓库> && cd career-copilot
 | 简历解析（PDF/DOCX）→ 事实确认 | ✅ 真实执行 | 未经用户确认的事实不进入最终事实库 |
 | 岗位匹配（硬条件 + 向量 + 评分） | ✅ 真实执行 | pgvector 真实检索；评分证据组件可逐条溯源 |
 | 岗位供给 | ✅ 用户导入 + 合成种子 | 无爬虫/连接器（ADR-003 明确不做）；种子岗位 DB 层 `data_origin='synthetic_seed'` + 前端「合成示例」徽标双重标注 |
-| Embedding 向量 | ⚠️ 确定性合成 | 检索链路真实，向量本身由确定性合成 Adapter 生成 |
-| AI 标准分析 / 多 Agent | ⚠️ 合成响应 | 走真实编排与证据校验管线，模型输出为 synthetic adapter；**真实 DeepSeek 调用未验证** |
-| 定制简历生成 + DOCX/PDF 导出 | ⚠️ 生成合成、校验真实 | 事实引用/数字一致性等确定性校验与导出为真实执行 |
-| 真实 LLM（DeepSeek）全链路 | ❌ 未验证（`not_verified`） | 计划中的 P0（[docs/15](docs/15-portfolio-convergence-plan.md)），待 API key 到位后实跑并留证 |
+| Embedding 向量 | ⚠️ 确定性合成 | 检索链路真实，向量本身由确定性合成 Adapter 生成（从未真实验证，如实标注） |
+| AI 标准分析 | ✅ 真实 DeepSeek 已验证 | 2026-07-30 实跑：真实模型产出通过完整证据校验管线（[docs/16](docs/16-real-model-verification.md) 第 1 节）；无 key 环境自动回落合成 Adapter 并如实标注 `verified=false` |
+| 定制简历生成 + DOCX/PDF 导出 | ✅ 真实 DeepSeek 已验证 | 2026-07-30 实跑：真实模型生成 → 四道确定性校验 → 确认 → 双格式导出下载（[docs/16](docs/16-real-model-verification.md) 第 2 节） |
+| 真实 LLM（DeepSeek）全链路 | ✅ 三链路已验证（2026-07-30） | 标准分析 / 定制简历 / 无效 key 失败路径各实跑通过，真实 token 用量与暴露修复的 5 个问题见 [docs/16](docs/16-real-model-verification.md)；能力状态按**三态**呈现（当前已配置 / 运行可用 / 历史验证证据，`/health/capabilities`），换机无 key 即回 `not_configured`，不因跑过一次永久标 verified |
+| 多 Agent（LangGraph） | ❌ 未做 | ADR-001 D2 推迟，单模型标准分析编排 |
 | 邮件送达 | 本地 Mailpit 捕获 | 不做真实外网送达 |
 | 云端部署 / Beta | ❌ 不做 | 作品集定位，仅本地演示（可选公开部署见 docs/15 P3，未启动） |
 
@@ -52,7 +53,7 @@ git clone <本仓库> && cd career-copilot
 
 | 指标 | 结果 | 复验命令 |
 |---|---|---|
-| 后端测试 | **pytest 295 passed**（286 存量 + 9 项 P1 新增） | `cd backend && uv run pytest` |
+| 后端测试 | **pytest 304 passed**（295 存量 + 9 项 P0 新增） | `cd backend && uv run pytest` |
 | 类型检查 | **mypy 0 错误 / 116 个源文件**，无以 `Any`/`type: ignore` 掩盖 | `cd backend && uv run mypy app` |
 | Lint | ruff 全过 | `cd backend && uv run ruff check .` |
 | CI | 三 job：后端(ruff+pytest) / 前端(lint+build) / 密钥扫描(gitleaks)，PR #1、#2 实际全绿 | [.github/workflows/ci.yml](.github/workflows/ci.yml) |
@@ -65,6 +66,7 @@ git clone <本仓库> && cd career-copilot
 4. **合规核查如实报告**：岗位来源 Spike 对 10 家目标公司官网做了可采集性核查，结果 0/10 通过（9 家 not_verified、1 家 blocked），报告原样保留、结论不追改（[supply-spike/reports/](supply-spike/reports/)、[ADR-002](docs/13-adr-002-supply-spike-gate.md)）——据此才有 ADR-003 的作品集转向决策。
 5. **合成数据双重标注**：种子岗位在数据库层 `data_origin` 受控字段（[迁移](backend/alembic/versions/20260730_f7c1a3e9d5b8_canonical_jobs_data_origin.py)）与前端「合成示例」徽标（[RecommendationCard](frontend/src/components/RecommendationCard.tsx)、[详情页](frontend/src/app/recommendations/%5Bid%5D/page.tsx)）同时标注，不允许只有内部标记。
 6. **日志无正文红线**：结构化日志不含简历/聊天正文、联系方式、token、密钥（[backend/app/core/logging.py](backend/app/core/logging.py)）。
+7. **真实模型验证如实留痕**：真实 DeepSeek 三链路实跑首轮即暴露 5 个问题（prompt 缺 Schema、失败丢账、测试泄用真实 key 等），全部修复并连同失败记录原样留档（[docs/16](docs/16-real-model-verification.md)）；模型能力状态按「当前已配置 / 运行可用 / 历史验证证据」三态呈现，绝不因跑过一次就永久标 verified（[backend/app/api/health.py](backend/app/api/health.py)）。
 
 ## 架构
 
@@ -121,5 +123,5 @@ flowchart LR
 
 - **许可**：本仓库暂未附带开源许可证，默认保留所有权利；仅供学习与作品集展示，如需其他用途请先联系作者。
 - **合成数据**：仓库内全部岗位、公司、简历、人物均为合成内容，不对应任何真实在招岗位或真实个人；如有雷同纯属巧合。
-- **非求职建议**：本项目的匹配分数、分析报告与定制简历均为技术演示产物（当前 LLM 输出为合成响应），**不构成任何求职、职业或法律建议**，请勿据此做出实际求职决策。
+- **非求职建议**：本项目的匹配分数、分析报告与定制简历均为技术演示产物（LLM 输出视环境而定：配置真实 DeepSeek key 时为真实模型产出，否则为确定性合成响应，运行时经 `/health/capabilities` 三态与逐 run `verified` 字段如实标注），**不构成任何求职、职业或法律建议**，请勿据此做出实际求职决策。
 - **非商用服务**：本项目不是运营中的产品，不提供可用性、准确性或数据留存承诺。
