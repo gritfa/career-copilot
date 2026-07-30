@@ -389,3 +389,25 @@ def test_extract_input_doc_roundtrip_and_garbage():
     doc = _analysis_input()
     assert extract_input_doc(build_analysis_request(doc).user) == doc
     assert extract_input_doc("没有输入标记") is None
+
+
+def test_prompts_embed_output_json_schema():
+    """P0 实跑回归：prompt 必须内嵌完整输出 JSON Schema。
+
+    v1 只列顶层字段名，真实 DeepSeek 把 resume_suggestions 输出成字符串数组
+    → SCHEMA_INVALID（合成 Adapter 不读 prompt，缺陷一直未暴露）。
+    """
+    from app.tailoring.prompts import build_tailor_request
+
+    analysis_user = build_analysis_request(_analysis_input()).user
+    # 嵌套对象的字段名必须能从 prompt 中找到（模型据此产出对象数组）
+    for field in ("based_on_fact_ids", "profile_fact_ids", "job_span", "uncertainty"):
+        assert field in analysis_user, f"analysis prompt 缺 Schema 字段 {field}"
+
+    tailor_request = build_tailor_request(
+        {"facts": [], "job": {"title": "", "company": "", "description": ""}}
+    )
+    for field in ("fact_ids", "sections", "changes", "reason"):
+        assert field in tailor_request.user, f"tailor prompt 缺 Schema 字段 {field}"
+    # 定制简历输出较长：请求级 max_output_tokens 必须高于默认 2048（防截断坏 JSON）
+    assert (tailor_request.max_output_tokens or 0) >= 4096
