@@ -112,7 +112,8 @@ def test_synthetic_provider_needs_no_consent():
 
 
 def test_deepseek_adapter_without_key_not_configured(monkeypatch):
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    # 置空而非删除：删除会让 backend/.env 里的真实 key 经 env_file 泄入测试
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
     from app.core.config import get_settings
 
     get_settings.cache_clear()
