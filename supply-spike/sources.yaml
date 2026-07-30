@@ -1,0 +1,191 @@
+# 供给 Spike 来源清单 v1（第一批：10 家有公开招聘官网的中国公司）
+#
+# 合规硬边界（ADR-002 / 阶段 10 任务书）：
+# - 只允许对公开招聘官网做低频只读检查（robots.txt / 条款页 / 入口页各一次）。
+# - 自动请求必须全部满足：无需登录、无验证码、robots.txt 与公开条款未禁止、
+#   可识别 UA、单域名 ≤1 请求/2 秒、有超时/重试上限/熔断/缓存。
+# - 政策不清 = not_verified = 不自动访问；绝不绕过登录/验证码/反爬。
+# - BOSS 直聘不在本清单：只保留搜索跳转 + 用户导入，绝不抓正文。
+#
+# 每个来源的 probe_result 块由 `run_supply_spike.py probe` 如实写入；
+# status ∈ verified / not_verified / blocked，人工只可收紧不可放宽。
+# terms_manual_review: pending_owner_confirmation = 条款需人工法务判读，
+# 判读通过前该来源永远到不了 verified。
+version: 1
+user_agent: 'CareerCopilotSpike/0.1 (+contact: careers-spike@placeholder.invalid)'
+rate_limit:
+  min_interval_seconds: 2.0
+  timeout_seconds: 10.0
+  max_retries: 2
+  circuit_break_after_failures: 3
+sources:
+- key: bytedance
+  company: 字节跳动
+  aliases:
+  - ByteDance
+  - 北京字节跳动科技有限公司
+  domain: jobs.bytedance.com
+  entry_url: https://jobs.bytedance.com/experienced
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方社招站；覆盖北京/上海/深圳/杭州/成都等城市
+- key: tencent
+  company: 腾讯
+  aliases:
+  - Tencent
+  - 腾讯科技（深圳）有限公司
+  domain: careers.tencent.com
+  entry_url: https://careers.tencent.com/search.html
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方招聘站；深圳/北京/上海/广州/成都均有岗位
+- key: alibaba
+  company: 阿里巴巴
+  aliases:
+  - Alibaba
+  - 阿里巴巴集团
+  domain: talent.alibaba.com
+  entry_url: https://talent.alibaba.com/
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方人才站；杭州/北京/上海为主
+- key: antgroup
+  company: 蚂蚁集团
+  aliases:
+  - Ant Group
+  - 蚂蚁科技集团股份有限公司
+  domain: talent.antgroup.com
+  entry_url: https://talent.antgroup.com/off-campus
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方社招站；杭州/上海/北京/成都
+- key: huawei
+  company: 华为
+  aliases:
+  - Huawei
+  - 华为技术有限公司
+  domain: career.huawei.com
+  entry_url: https://career.huawei.com/reccampportal/portal5/social-recruitment.html
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方社招门户；深圳/杭州/成都/北京/上海
+- key: netease
+  company: 网易
+  aliases:
+  - NetEase
+  - 网易（杭州）网络有限公司
+  domain: hr.163.com
+  entry_url: https://hr.163.com/
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方招聘站；杭州/广州/北京/上海
+- key: meituan
+  company: 美团
+  aliases:
+  - Meituan
+  - 北京三快在线科技有限公司
+  domain: zhaopin.meituan.com
+  entry_url: https://zhaopin.meituan.com/web/position
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方社招站；北京/上海/成都/深圳
+- key: xiaomi
+  company: 小米
+  aliases:
+  - Xiaomi
+  - 小米科技有限责任公司
+  domain: hr.xiaomi.com
+  entry_url: https://hr.xiaomi.com/job
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方招聘站；北京/南京/武汉/深圳
+- key: jd
+  company: 京东
+  aliases:
+  - JD.com
+  - 北京京东世纪贸易有限公司
+  domain: zhaopin.jd.com
+  entry_url: https://zhaopin.jd.com/web/job/job_index
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方社招站；北京为主
+- key: baidu
+  company: 百度
+  aliases:
+  - Baidu
+  - 北京百度网讯科技有限公司
+  domain: talent.baidu.com
+  entry_url: https://talent.baidu.com/jobs/social-list
+  terms_url: null
+  source_type: company_site
+  allowed_access:
+  - robots_txt
+  - terms_page
+  - entry_page_readonly
+  terms_manual_review: pending_owner_confirmation
+  status: not_verified
+  status_reason: 未探测
+  notes: 官方社招站；北京/上海/深圳/成都
