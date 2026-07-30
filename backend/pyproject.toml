@@ -24,6 +24,7 @@ dependencies = [
     "pgvector>=0.3.6",
     "httpx>=0.28",
     "reportlab>=4.2",
+    "pyyaml>=6.0.3",
 ]
 
 [dependency-groups]
@@ -33,6 +34,7 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
+    "types-pyyaml>=6.0.12.20260724",
 ]
 
 [build-system]

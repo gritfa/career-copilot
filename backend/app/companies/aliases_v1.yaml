@@ -1,0 +1,69 @@
+# 公司别名配置 v1（阶段 10 任务 D）
+#
+# 规则：
+# - 人工维护、版本化；alias 在 company_norm_v1 标准化后与输入比较（大小写/全半角不敏感）。
+# - 只放"确定是同一公司主体品牌"的别名；拿不准的绝不写进来，走 company_alias_reviews 人工审核。
+# - 每条 canonical_name 是产品内公司规范名；evidence 记录依据（公开官网/招聘站）。
+version: 1
+rules_version: company_norm_v1
+companies:
+  - canonical_name: 字节跳动
+    aliases:
+      - ByteDance
+      - 北京字节跳动科技有限公司
+      - 字节跳动科技
+    evidence: https://jobs.bytedance.com（官方招聘站页脚署名）
+  - canonical_name: 腾讯
+    aliases:
+      - Tencent
+      - 腾讯科技
+      - 深圳市腾讯计算机系统有限公司
+      - 腾讯科技（深圳）有限公司
+    evidence: https://careers.tencent.com
+  - canonical_name: 阿里巴巴
+    aliases:
+      - Alibaba
+      - 阿里巴巴集团
+      - 阿里巴巴（中国）有限公司
+      - 阿里巴巴集团控股有限公司
+    evidence: https://talent.alibaba.com
+  - canonical_name: 蚂蚁集团
+    aliases:
+      - Ant Group
+      - 蚂蚁金服
+      - 蚂蚁科技集团股份有限公司
+    evidence: https://talent.antgroup.com
+  - canonical_name: 华为
+    aliases:
+      - Huawei
+      - 华为技术有限公司
+    evidence: https://career.huawei.com
+  - canonical_name: 网易
+    aliases:
+      - NetEase
+      - 网易（杭州）网络有限公司
+      - 杭州网易雷火科技有限公司
+    evidence: https://hr.163.com
+  - canonical_name: 美团
+    aliases:
+      - Meituan
+      - 北京三快在线科技有限公司
+      - 北京三快科技有限公司
+    evidence: https://zhaopin.meituan.com
+  - canonical_name: 小米
+    aliases:
+      - Xiaomi
+      - 小米科技有限责任公司
+      - 小米集团
+    evidence: https://hr.xiaomi.com
+  - canonical_name: 京东
+    aliases:
+      - JD.com
+      - 京东集团
+      - 北京京东世纪贸易有限公司
+    evidence: https://zhaopin.jd.com
+  - canonical_name: 百度
+    aliases:
+      - Baidu
+      - 北京百度网讯科技有限公司
+    evidence: https://talent.baidu.com

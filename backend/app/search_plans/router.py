@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit
 from app.auth.deps import AuthContext, ensure_owner, require_active_user, require_user
+from app.companies.resolver import company_name_fields
 from app.core.errors import AppError
 from app.core.security import hash_ip
 from app.db.models import Company, CompanyPreference, LearnedPreference, SearchPlan
@@ -323,7 +324,12 @@ async def put_company_preferences(
             )
         ).scalar_one_or_none()
         if company is None:
-            company = Company(canonical_name=company_name, aliases=[], source_refs_json=[])
+            company = Company(
+                canonical_name=company_name,
+                aliases=[],
+                source_refs_json=[],
+                **company_name_fields(company_name),
+            )
             db.add(company)
             await db.flush()
         db.add(

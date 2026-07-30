@@ -17,6 +17,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.companies.resolver import resolve_company
 from app.db.models import Company, JobPosting, JobSnapshot, JobSource
 from app.integrations.storage import get_storage
 from app.jobs.adapters.base import RawJobSnapshot
@@ -52,18 +53,10 @@ class IngestResult:
 
 
 def get_or_create_company(db: Session, name: str | None) -> Company | None:
-    """按规范名 get-or-create 公司（名称非正文/非个人信息，可入库）。"""
-    if not name or not name.strip():
-        return None
-    canonical = name.strip()
-    company = db.execute(
-        select(Company).where(Company.canonical_name == canonical)
-    ).scalar_one_or_none()
-    if company is None:
-        company = Company(id=uuid.uuid4(), canonical_name=canonical, aliases=[])
-        db.add(company)
-        db.flush()
-    return company
+    """公司归一（阶段 10 任务 D）：精确/别名配置/标准化命中归一到既有公司；
+    仅 core 相似的低置信候选新建独立公司并进人工待审，绝不自动合并；
+    垃圾/占位名返回 None（名称非正文/非个人信息，可入库）。"""
+    return resolve_company(db, name).company
 
 
 def create_snapshot(db: Session, source: JobSource, raw: RawJobSnapshot) -> JobSnapshot:
