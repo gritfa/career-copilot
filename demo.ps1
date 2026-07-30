@@ -131,7 +131,7 @@ function Cmd-Up {
     Start-Proc "api" $backendDir "uv" @("run", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", $ApiPort)
     # Windows 下 Celery 需要 solo pool
     Start-Proc "worker" $backendDir "uv" @("run", "celery", "-A", "app.tasks.celery_app", "worker", "--loglevel", "info", "--pool", "solo")
-    Start-Proc "beat" $backendDir "uv" @("run", "celery", "-A", "app.tasks.celery_app", "beat", "--loglevel", "info")
+    Start-Proc "beat" $backendDir "uv" @("run", "celery", "-A", "app.tasks.celery_app", "beat", "--loglevel", "info", "--schedule", (Join-Path $DemoDir "celerybeat-schedule"))
     if (-not (Test-Path (Join-Path $frontendDir "node_modules"))) {
         Info "安装前端依赖（npm install，首次较慢）..."
         Push-Location $frontendDir; npm install | Out-Null; Pop-Location

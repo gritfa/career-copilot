@@ -149,7 +149,8 @@ cmd_up() {
   free_port "$FRONTEND_PORT"
   start_proc api "$ROOT/backend" uv run uvicorn app.main:app --host 127.0.0.1 --port "$API_PORT"
   start_proc worker "$ROOT/backend" uv run celery -A app.tasks.celery_app worker --loglevel info
-  start_proc beat "$ROOT/backend" uv run celery -A app.tasks.celery_app beat --loglevel info
+  start_proc beat "$ROOT/backend" uv run celery -A app.tasks.celery_app beat --loglevel info \
+    --schedule "$DEMO_DIR/celerybeat-schedule"
   if [ ! -d "$ROOT/frontend/node_modules" ]; then
     info "安装前端依赖（npm install，首次较慢）..."
     (cd "$ROOT/frontend" && npm install >"$LOG_DIR/npm-install.log" 2>&1)
