@@ -831,6 +831,11 @@ class CanonicalJob(Base):
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    # 数据来源标注（阶段 11 P1）：connector / user_import / synthetic_seed；
+    # synthetic_seed 的岗位前端必须在列表卡片与详情页展示「合成示例」徽标
+    data_origin: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="user_import", server_default="user_import"
+    )
     city_code: Mapped[str | None] = mapped_column(String(12))
     # 主展示来源 posting；与 job_postings 循环引用，不建 FK
     primary_posting_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -860,6 +865,10 @@ class CanonicalJob(Base):
         CheckConstraint(
             "visibility IN ('global', 'private')",
             name="ck_canonical_jobs_visibility",
+        ),
+        CheckConstraint(
+            "data_origin IN ('connector', 'user_import', 'synthetic_seed')",
+            name="ck_canonical_jobs_data_origin",
         ),
         Index("ix_canonical_jobs_company_city", "company_id", "city_code"),
         Index("ix_canonical_jobs_visibility_owner", "visibility", "owner_user_id"),
