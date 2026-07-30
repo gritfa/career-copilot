@@ -118,10 +118,10 @@ async def test_recommendation_api_exposes_data_origin(client, db_factory):
     await create_facts(db_factory, user)
     plan = await create_plan(db_factory, user)
     await create_job(db_factory, title="Python 后端开发工程师 普通")
-    seeded = await create_job(db_factory, title="Python 后端开发工程师 种子")
+    seeded_id = await create_job(db_factory, title="Python 后端开发工程师 种子")
     async with db_factory() as db:
         canonical = (
-            await db.execute(select(CanonicalJob).where(CanonicalJob.id == seeded.id))
+            await db.execute(select(CanonicalJob).where(CanonicalJob.id == seeded_id))
         ).scalar_one()
         canonical.data_origin = "synthetic_seed"
         await db.commit()
