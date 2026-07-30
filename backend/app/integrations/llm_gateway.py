@@ -48,7 +48,15 @@ class LLMAuthorizationError(LLMError):
 
 
 class LLMSchemaError(LLMError):
-    """结构化输出经一次修复后仍不符合 Schema（失败不得伪装完成）。"""
+    """结构化输出经一次修复后仍不符合 Schema（失败不得伪装完成）。
+
+    携带 ``usage``：Schema 失败前的真实调用已实际消耗供应商 token，
+    调用方必须照常写 usage_ledger（P0 实跑暴露：失败 run 的费用曾丢账）。
+    """
+
+    def __init__(self, message: str, usage: "LLMUsage | None" = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class LLMProviderRejectedError(LLMError):
@@ -296,7 +304,21 @@ class ModelGateway:
                     error_note=error_note,
                 )
                 raise LLMSchemaError(
-                    f"output failed schema {request.schema_name} after one repair"
+                    f"output failed schema {request.schema_name} after one repair",
+                    usage=LLMUsage(
+                        provider=self.adapter.provider,
+                        model_id=self.adapter.model_id,
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        amount_estimated=_estimate_amount(
+                            self.adapter.provider,
+                            self.adapter.model_id,
+                            tokens_in,
+                            tokens_out,
+                        ),
+                        attempts=attempts,
+                        repaired=True,
+                    ),
                 )
 
         usage = LLMUsage(

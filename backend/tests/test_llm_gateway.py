@@ -268,9 +268,15 @@ def test_schema_repair_once_then_success():
 
 def test_schema_fails_after_one_repair_no_fake_success():
     adapter = FakeAdapter(['{"wrong": 1}', '{"still": "wrong"}', _ok()])
-    with pytest.raises(LLMSchemaError):
+    with pytest.raises(LLMSchemaError) as exc_info:
         ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
     assert len(adapter.calls) == 2  # 修复只允许一次，绝不第三次
+    # P0 实跑暴露的丢账修复：Schema 失败也必须携带真实用量供调用方记账
+    usage = exc_info.value.usage
+    assert usage is not None
+    assert usage.tokens_in == 200 and usage.tokens_out == 100  # 两次调用都计
+    assert usage.attempts == 2 and usage.repaired is True
+    assert usage.amount_estimated > 0  # deepseek 真实扣费不因失败清零
 
 
 # ---------------- 日志边界：正文绝不入日志 ----------------

@@ -188,7 +188,10 @@ def execute_resume_tailoring(
         draft, usage = gateway.complete_json(
             build_tailor_request(input_doc), TailoredResumeDraft, consent=consent
         )
-    except LLMSchemaError:
+    except LLMSchemaError as exc:
+        # Schema 失败前的真实调用已实际扣费：照常记账（_fail_version 内 commit）
+        if exc.usage is not None:
+            _record_llm_usage(db, version.user_id, exc.usage)
         return _fail_version(db, version, "SCHEMA_INVALID")
     except (LLMNotConfiguredError, LLMAuthorizationError):
         return _fail_version(db, version, "CONSENT_REQUIRED")

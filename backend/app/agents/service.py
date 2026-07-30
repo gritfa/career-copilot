@@ -266,7 +266,13 @@ def execute_standard_analysis(
             StandardAnalysisReport,
             consent=consent,
         )
-    except LLMSchemaError:
+    except LLMSchemaError as exc:
+        # Schema 失败前的真实调用已实际扣费：照常记账（_fail 内 commit）
+        if exc.usage is not None:
+            _record_llm_usage(db, plan.user_id, exc.usage)
+            run.cost_tokens_in = exc.usage.tokens_in
+            run.cost_tokens_out = exc.usage.tokens_out
+            run.cost_amount = exc.usage.amount_estimated
         return _fail(db, run, "SCHEMA_INVALID")
     except (LLMNotConfiguredError, LLMAuthorizationError):
         return _fail(db, run, "CONSENT_REQUIRED")
