@@ -29,3 +29,23 @@ def test_privacy_purge_and_cleanup_registered_in_beat():
     assert "privacy.generate_data_export" in celery_app.tasks
     assert "privacy.purge_due_accounts" in celery_app.tasks
     assert "privacy.cleanup_expired_export_files" in celery_app.tasks
+
+
+def test_all_beat_entries_point_to_registered_tasks():
+    """beat 里的每个条目必须指向已注册任务——防止改名/漏 import 后静默不执行。
+
+    注册表由 celery_app 模块导入时的 import_default_modules() 保证填充，
+    不依赖其他测试模块先 import 业务代码的副作用（跨平台/收集顺序无关）。
+    """
+    for entry_name, entry in celery_app.conf.beat_schedule.items():
+        assert entry["task"] in celery_app.tasks, (
+            f"beat 条目 {entry_name} 指向未注册任务 {entry['task']}"
+        )
+
+
+def test_imports_config_matches_registry():
+    """imports 列表中的每个模块都至少注册了一个任务（防僵尸配置项）。"""
+    registered_modules = {task.__module__ for name, task in celery_app.tasks.items()
+                          if not name.startswith("celery.")}
+    for module in celery_app.conf.imports:
+        assert module in registered_modules, f"{module} 未注册任何任务"

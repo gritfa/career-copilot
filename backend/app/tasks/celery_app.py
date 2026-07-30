@@ -71,6 +71,13 @@ def create_celery_app() -> Celery:
 
 celery_app = create_celery_app()
 
+# 任务注册显式确定化（阶段 11 P-1 第 4 项）：conf.imports 只在 worker 启动时
+# 由 loader 导入；单独 import 本模块（如 test_celery_beat 先于其他测试收集、
+# Windows/pytest 随机顺序）时注册表为空，registration 断言会假失败。
+# 这里在模块导入时同步导入同一份 imports 列表——与 worker 启动路径完全一致，
+# 任何进程只要 import 了 celery_app 就拿到完整任务注册表，不依赖收集顺序。
+celery_app.loader.import_default_modules()
+
 
 def dispatch_task(task: Task, *args: Any) -> None:
     """入队任务；eager 配置下同步执行（走真实任务调用路径 ``apply``）。
