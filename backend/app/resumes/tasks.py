@@ -15,7 +15,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import create_engine, delete, select, update
+from sqlalchemy import Engine, create_engine, delete, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
@@ -40,7 +40,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _task_session() -> tuple[Session, object]:
+def _task_session() -> tuple[Session, Engine]:
     """任务级同步会话（每次任务独立引擎，避免跨环境连接串用）。"""
     engine = create_engine(get_settings().sync_database_url, poolclass=NullPool)
     return Session(engine), engine
@@ -186,7 +186,7 @@ def parse_resume_task(self, parse_id: str) -> str:
         return "succeeded"
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 @celery_app.task(bind=True, name="resumes.cleanup_resume", max_retries=3)
@@ -239,7 +239,7 @@ def cleanup_resume_task(self, resume_id: str) -> str:
         return "deleted"
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 @celery_app.task(name="resumes.cleanup_expired_uploads")

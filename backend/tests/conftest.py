@@ -8,6 +8,12 @@ os.environ["DATABASE_URL"] = "postgresql+asyncpg://tester:secret-db-pass@127.0.0
 os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 os.environ["HEALTH_CHECK_TIMEOUT_SECONDS"] = "1.0"
 
+# 供应商密钥隔离（阶段 10 测试质量项）：测试绝不依赖/泄用机器环境里的真实 key。
+# 合成 Adapter 的选择逻辑以"key 为空"为准；机器上配了真实 key 也不得影响测试结果。
+_PROVIDER_KEY_ENVS = ("DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY")
+for _key in _PROVIDER_KEY_ENVS:
+    os.environ.pop(_key, None)
+
 import pytest  # noqa: E402
 import structlog  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -19,6 +25,13 @@ get_settings.cache_clear()
 # 测试中禁用 logger 缓存：否则先跑的测试会用原始 processors 缓存 logger，
 # 之后 structlog.testing.capture_logs() 拦不到日志（单跑过、全量挂的元凶）。
 structlog.configure(cache_logger_on_first_use=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_provider_keys(monkeypatch):
+    """每个测试再兜底一次：任何测试期间设置/残留的供应商 key 不跨测试泄漏。"""
+    for key in _PROVIDER_KEY_ENVS:
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture
