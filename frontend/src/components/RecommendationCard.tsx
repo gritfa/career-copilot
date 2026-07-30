@@ -16,6 +16,7 @@ import {
   fmtTime,
   gradeBadgeClass,
   gradeName,
+  isSyntheticSeed,
   parseFeedback,
   recCity,
   recCompany,
@@ -233,9 +234,16 @@ export default function RecommendationCard({ item }: { item: Recommendation }) {
           flexWrap: "wrap",
         }}
       >
-        <Link href={detailHref} className="link">
-          <strong>{recTitle(item)}</strong>
-        </Link>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Link href={detailHref} className="link">
+            <strong>{recTitle(item)}</strong>
+          </Link>
+          {isSyntheticSeed(item) ? (
+            <span className="badge" title="该岗位为合成种子数据，仅用于产品演示，非真实在招岗位">
+              合成示例
+            </span>
+          ) : null}
+        </span>
         {item.score != null || item.grade ? (
           <span className={gradeBadgeClass(item.grade)}>
             {item.score != null ? `${item.score} 分` : ""}

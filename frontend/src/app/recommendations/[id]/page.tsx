@@ -24,6 +24,7 @@ import {
   gradeBadgeClass,
   gradeName,
   hardConditionLabel,
+  isSyntheticSeed,
   normalizeHardStatus,
   parseFeedback,
   recCity,
@@ -159,7 +160,14 @@ function JobInfoSection({ rec }: { rec: Recommendation }) {
           flexWrap: "wrap",
         }}
       >
-        <h1>{recTitle(rec)}</h1>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <h1 style={{ margin: 0 }}>{recTitle(rec)}</h1>
+          {isSyntheticSeed(rec) ? (
+            <span className="badge" title="该岗位为合成种子数据，仅用于产品演示，非真实在招岗位">
+              合成示例
+            </span>
+          ) : null}
+        </span>
         {rec.score != null || rec.grade ? (
           <span className={gradeBadgeClass(rec.grade)}>
             {rec.score != null ? `${rec.score} 分` : ""}
