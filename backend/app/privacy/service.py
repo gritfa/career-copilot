@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,8 @@ from app.db.models import (
     DataExport,
     FactCandidate,
     FactEvidence,
+    JobPosting,
+    JobSnapshot,
     LearnedPreference,
     MatchComponent,
     ProfileFact,
@@ -453,7 +456,8 @@ def execute_account_purge(db: Session, user_id: uuid.UUID) -> dict[str, Any]:
     run.attempts += 1
     db.commit()
 
-    # 1) 收集要删的存储对象（简历原件、解析文本、导出文件、数据导出 ZIP）
+    # 1) 收集要删的存储对象（简历原件、解析文本、导出文件、数据导出 ZIP、
+    #    个人导入岗位的原始快照——用户粘贴的岗位正文属于个人提交内容）
     file_keys: list[str] = []
     resumes = _rows(db, select(Resume).where(Resume.user_id == user_id))
     resume_ids = [r.id for r in resumes]
@@ -468,6 +472,16 @@ def execute_account_purge(db: Session, user_id: uuid.UUID) -> dict[str, Any]:
     file_keys += [e.storage_key for e in exports if e.storage_key and not e.file_purged_at]
     data_exports = _rows(db, select(DataExport).where(DataExport.user_id == user_id))
     file_keys += [e.storage_key for e in data_exports if e.storage_key and not e.file_purged_at]
+    imported_postings = _rows(
+        db, select(JobPosting).where(JobPosting.imported_by_user_id == user_id)
+    )
+    import_snapshot_ids = [p.snapshot_id for p in imported_postings if p.snapshot_id]
+    import_snapshots = (
+        _rows(db, select(JobSnapshot).where(JobSnapshot.id.in_(import_snapshot_ids)))
+        if import_snapshot_ids
+        else []
+    )
+    file_keys += [s.storage_key for s in import_snapshots]
 
     # 2) 逐个删文件；失败只记 key 的哈希（不落 key/文件名到清单与日志）
     failed_files = 0
@@ -568,7 +582,34 @@ def execute_account_purge(db: Session, user_id: uuid.UUID) -> dict[str, Any]:
         db.delete(t)
     manifest["auth_tokens"] = len(tokens)
 
-    # 5) 删用户行 → 级联删除全部归属行；usage_ledger.user_id / 导入岗位归属 SET NULL（匿名化）
+    # 4.5) 个人导入岗位清理（阶段 10 任务 B）：私有 canonical（连带 job_vectors /
+    #      recommendations 级联）、导入 posting、原始快照行全部物理删除——
+    #      注销后不再出现在任何用户的候选池、来源链接或有效性检查里。
+    owned_private_job_ids = [
+        j.id
+        for j in _rows(
+            db,
+            select(CanonicalJob).where(
+                CanonicalJob.visibility == "private",
+                CanonicalJob.owner_user_id == user_id,
+            ),
+        )
+    ]
+    for posting in imported_postings:
+        db.delete(posting)
+    db.flush()
+    if owned_private_job_ids:
+        db.execute(sa_delete(CanonicalJob).where(CanonicalJob.id.in_(owned_private_job_ids)))
+    if import_snapshot_ids:
+        # job_snapshots append-only 触发器的唯一放行例外：本事务显式声明注销硬删
+        db.execute(select(func.set_config("app.allow_snapshot_purge", "1", True)))
+        db.execute(sa_delete(JobSnapshot).where(JobSnapshot.id.in_(import_snapshot_ids)))
+    manifest["imported_postings"] = len(imported_postings)
+    manifest["private_canonical_jobs"] = len(owned_private_job_ids)
+    manifest["job_snapshots_purged"] = len(import_snapshot_ids)
+
+    # 5) 删用户行 → 级联删除全部归属行；usage_ledger.user_id SET NULL（匿名化）；
+    #    个人导入岗位已在 4.5 物理删除，不走 SET NULL 匿名化
     db.delete(user)
     run.status = "succeeded"
     run.manifest_json = manifest

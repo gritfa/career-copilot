@@ -212,8 +212,12 @@ async def test_source_runs_success_with_failures_rejected_by_db(client, db_facto
 # ---------------- 去重三层 ----------------
 
 
-async def test_dedupe_cross_source_high_confidence_merges(client, db_factory):
-    """跨源同岗（公司+职位+城市键相同、正文高相似）→ 自动合并，官网为主来源。"""
+async def test_dedupe_user_import_never_merges_into_global(client, db_factory):
+    """阶段 10 规则：用户导入与公开岗位高相似 → 只记"可能相同"，绝不并入公开岗位。
+
+    个人正文/来源记录不得跨用户暴露：导入得到本人 private canonical，
+    公开岗位的来源链接里绝不出现该用户的 user_import posting。
+    """
     await run_source("fixture_a")
     await login(client, db_factory)
 
@@ -232,22 +236,35 @@ async def test_dedupe_cross_source_high_confidence_merges(client, db_factory):
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["dedupe_status"] == "merged"
-
     fixture_posting = await get_posting(db_factory, "XL-002")
-    assert body["canonical_job_id"] == str(fixture_posting.canonical_job_id)
 
-    # 全部来源链接保留；企业官网是主来源
-    sources = await client.get(f"/api/v1/jobs/{body['canonical_job_id']}/sources")
+    # 不合并：本人独立 private canonical + "可能相同"标记
+    assert body["dedupe_status"] == "unique"
+    assert body["canonical_job_id"] is not None
+    assert body["canonical_job_id"] != str(fixture_posting.canonical_job_id)
+    async with db_factory() as db:
+        own_posting = (
+            await db.execute(select(JobPosting).where(JobPosting.id == body["posting_id"]))
+        ).scalar_one()
+        own_canonical = (
+            await db.execute(
+                select(CanonicalJob).where(CanonicalJob.id == own_posting.canonical_job_id)
+            )
+        ).scalar_one()
+    assert own_posting.dedupe_candidate_canonical_id == fixture_posting.canonical_job_id
+    assert own_canonical.visibility == "private"
+    assert own_canonical.owner_user_id is not None
+
+    # 公开岗位的来源链接只有官网来源，绝无个人导入记录
+    sources = await client.get(f"/api/v1/jobs/{fixture_posting.canonical_job_id}/sources")
     assert sources.status_code == 200
     items = sources.json()["items"]
-    assert len(items) == 2
-    by_key = {i["source_key"]: i for i in items}
-    assert by_key["fixture_a"]["is_primary"] is True
-    assert by_key["user_import"]["is_primary"] is False
+    assert [i["source_key"] for i in items] == ["fixture_a"]
+    assert items[0]["is_primary"] is True
 
 
-async def test_dedupe_mid_confidence_goes_to_review_queue(client, db_factory):
+async def test_dedupe_mid_confidence_vs_global_marks_candidate_only(client, db_factory):
+    """用户导入与公开岗位中置信相似：不进待审队列（不阻断本人推荐），只记候选 ID。"""
     await run_source("fixture_a")
     await login(client, db_factory)
 
@@ -269,14 +286,76 @@ async def test_dedupe_mid_confidence_goes_to_review_queue(client, db_factory):
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["dedupe_status"] == "pending_review"
-    assert body["canonical_job_id"] is None  # 待审期间不并池
+    assert body["dedupe_status"] == "unique"
+    assert body["canonical_job_id"] is not None  # 本人 private canonical，可正常被推荐给本人
 
     async with db_factory() as db:
         posting = (
             await db.execute(
                 select(JobPosting).where(JobPosting.id == body["posting_id"])
             )
+        ).scalar_one()
+        fixture_posting = (
+            await db.execute(select(JobPosting).where(JobPosting.source_job_id == "XL-002"))
+        ).scalar_one()
+    assert posting.dedupe_candidate_canonical_id == fixture_posting.canonical_job_id
+
+
+async def test_dedupe_connector_mid_confidence_goes_to_review_queue(client, db_factory):
+    """连接器来源之间的中置信重复仍走待审队列（原有行为不变）。"""
+    await run_source("fixture_a")
+
+    from app.jobs.pipeline import ingest_raw
+    from tests.integration.test_matching_pipeline import _get_source_id
+
+    similar_desc = (
+        "负责核心交易服务的 FastAPI/异步微服务开发，PostgreSQL 与 Redis 调优，"
+        "主导跨团队架构评审与代码规范建设专项工作。"
+    )
+    ratio = text_similarity(XL002_DESC, similar_desc)
+    assert ratio is not None and MID_CONFIDENCE <= ratio < HIGH_CONFIDENCE, ratio
+
+    import json as jsonlib
+
+    from app.jobs.adapters.base import RawJobSnapshot, SourceJobRef
+    from tests.integration.test_account_purge import _sync_session
+
+    other_source_id = await _get_source_id(db_factory)
+    payload = {
+        "title": XL002_TITLE,
+        "company": XL002_COMPANY,
+        "city": XL002_CITY,
+        "employment": "全职",
+        "description": similar_desc,
+    }
+    from datetime import UTC, datetime
+
+    raw = RawJobSnapshot(
+        ref=SourceJobRef(source_key="test_matching", source_job_id="TM-DUP-1", url=""),
+        content=jsonlib.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        media_type="application/json",
+        fetched_at=datetime.now(UTC),
+        http_meta={},
+    )
+
+    def _ingest():
+        db, engine = _sync_session()
+        try:
+            source = db.get(JobSource, other_source_id)
+            result = ingest_raw(db, source, raw)
+            db.commit()
+            return result
+        finally:
+            db.close()
+            engine.dispose()
+
+    result = await asyncio.to_thread(_ingest)
+    assert result.dedupe_status == "pending_review"
+    assert result.canonical_job_id is None  # 待审期间不并池
+
+    async with db_factory() as db:
+        posting = (
+            await db.execute(select(JobPosting).where(JobPosting.id == result.posting_id))
         ).scalar_one()
         fixture_posting = (
             await db.execute(select(JobPosting).where(JobPosting.source_job_id == "XL-002"))

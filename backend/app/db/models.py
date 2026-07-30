@@ -746,7 +746,14 @@ class JobSnapshot(Base):
 
 
 class CanonicalJob(Base):
-    """去重合并后的岗位主体；企业官网优先主来源，保留全部来源链接。"""
+    """去重合并后的岗位主体；企业官网优先主来源，保留全部来源链接。
+
+    可见性模型（阶段 10 任务 B）：
+    - ``visibility='global'``：连接器公开岗位，进入所有用户的候选池。
+    - ``visibility='private'``：用户导入岗位，只有 ``owner_user_id`` 本人可见/可被推荐；
+      owner 为 NULL 的 private 岗位（归属无法推断/已注销）不参与任何推荐。
+    - 个人岗位只有经过明确审核发布（后续流程）才可转为 global。
+    """
 
     __tablename__ = "canonical_jobs"
 
@@ -757,6 +764,11 @@ class CanonicalJob(Base):
     role_family: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     company_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL")
+    )
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="global")
+    # 私有岗位归属者；用户行删除时 SET NULL（private+NULL owner 不参与任何推荐，兜底）
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     city_code: Mapped[str | None] = mapped_column(String(12))
     # 主展示来源 posting；与 job_postings 循环引用，不建 FK
@@ -784,7 +796,12 @@ class CanonicalJob(Base):
             "status IN ('active', 'inactive', 'unknown')",
             name="ck_canonical_jobs_status",
         ),
+        CheckConstraint(
+            "visibility IN ('global', 'private')",
+            name="ck_canonical_jobs_visibility",
+        ),
         Index("ix_canonical_jobs_company_city", "company_id", "city_code"),
+        Index("ix_canonical_jobs_visibility_owner", "visibility", "owner_user_id"),
     )
 
 
