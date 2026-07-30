@@ -8,8 +8,10 @@
 """
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
+from app.db.models import MatchComponent, ProfileFact
 from app.integrations.llm_gateway import LLMRequest
 from app.resumes.parser import PROTECTED_FACT_TYPES
 from app.tailoring.schemas import TEMPLATE_ID
@@ -47,12 +49,12 @@ def _filtered_fact_value(value: dict[str, Any]) -> dict[str, Any]:
 
 def build_tailor_input(
     *,
-    facts: list,
+    facts: Sequence[ProfileFact],
     posting,
     job_title: str,
     company_name: str,
     recommendation,
-    components: list,
+    components: Sequence[MatchComponent],
 ) -> dict[str, Any]:
     """构造定制输入文档（确定性：字段排序稳定；受保护属性绝不进入）。"""
     fact_items = [

@@ -10,8 +10,10 @@
 
 import hashlib
 import json
+from collections.abc import Sequence
 from typing import Any
 
+from app.db.models import MatchComponent, ProfileFact
 from app.integrations.llm_gateway import LLMRequest
 from app.resumes.parser import PROTECTED_FACT_TYPES
 
@@ -44,11 +46,11 @@ def _filtered_fact_value(value: dict[str, Any]) -> dict[str, Any]:
 
 def build_analysis_input(
     *,
-    facts: list,
+    facts: Sequence[ProfileFact],
     plan,
     posting,
     recommendation,
-    components: list,
+    components: Sequence[MatchComponent],
 ) -> dict[str, Any]:
     """构造分析输入文档（确定性：字段排序稳定）。
 

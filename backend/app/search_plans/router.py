@@ -25,6 +25,7 @@ from app.search_plans.schemas import (
     CompanyPreferenceOut,
     CompanyPreferencesOut,
     CompanyPreferencesPutRequest,
+    LinkOutURL,
     ResetLearnedOut,
     SearchPlanCreateRequest,
     SearchPlanListOut,
@@ -60,7 +61,11 @@ def _plan_out(plan: SearchPlan) -> SearchPlanOut:
         base_resume_version_id=plan.base_resume_version_id,
         created_at=plan.created_at,
         updated_at=plan.updated_at,
-        link_out_urls=build_plan_search_urls(plan.role_family, list(plan.city_codes)),
+        # boss 适配器返回 dict（不反向依赖本模块 schema），此处运行时真校验成模型
+        link_out_urls=[
+            LinkOutURL.model_validate(item)
+            for item in build_plan_search_urls(plan.role_family, list(plan.city_codes))
+        ],
     )
 
 

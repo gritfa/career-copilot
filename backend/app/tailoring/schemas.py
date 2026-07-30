@@ -19,8 +19,11 @@ TAILOR_OUTPUT_SCHEMA_VERSION = "resume_tailor_v1"
 TEMPLATE_ID = "standard_single_column_v1"  # 唯一模板（多模板按 ADR-001 推迟）
 
 ResumeVersionStatus = Literal["generating", "draft", "confirmed", "failed", "deleted"]
+ResumeVersionKind = Literal["plan_base", "job_tailored"]
+ResumeCreatedBy = Literal["user", "agent_draft"]
 ResumeExportStatus = Literal["queued", "running", "succeeded", "failed"]
 ExportFormat = Literal["docx", "pdf"]
+SectionKind = Literal["summary", "skills", "work_experience", "projects", "education"]
 
 SECTION_KINDS = ("summary", "skills", "work_experience", "projects", "education")
 
@@ -35,7 +38,7 @@ class ResumeItem(BaseModel):
 class ResumeSection(BaseModel):
     """单栏模板中的一个章节。"""
 
-    kind: Literal["summary", "skills", "work_experience", "projects", "education"]
+    kind: SectionKind
     title: str = Field(min_length=1, max_length=40)
     items: list[ResumeItem] = Field(default_factory=list)
 
@@ -80,13 +83,13 @@ class ResumeVersionOut(BaseModel):
     """简历版本对外视图：内容、调整明细与生成方式（合成 → not_verified）。"""
 
     id: uuid.UUID
-    kind: Literal["plan_base", "job_tailored"]
+    kind: ResumeVersionKind
     recommendation_id: uuid.UUID | None
     canonical_job_id: uuid.UUID | None
     parent_version_id: uuid.UUID | None
     template_id: str
     status: ResumeVersionStatus
-    created_by: Literal["user", "agent_draft"]
+    created_by: ResumeCreatedBy
     provider: str | None
     model_id: str | None
     # 合成/未经真实模型验证的产出必须如实标注（00-master：不虚标能力）

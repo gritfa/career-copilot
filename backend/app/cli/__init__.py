@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import create_engine, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
@@ -106,11 +107,14 @@ def cmd_user_suspend(db: Session, args: argparse.Namespace) -> None:
     user.status = "suspended"
     user.suspended_at = datetime.now(UTC)
     # 立即撤销全部会话
-    revoked = db.execute(
+    result = db.execute(
         update(DbSession)
         .where(DbSession.user_id == user.id, DbSession.revoked_at.is_(None))
         .values(revoked_at=datetime.now(UTC))
-    ).rowcount
+    )
+    # UPDATE 语句的返回在运行时必是 CursorResult（带 rowcount）；真实类型收窄，非 cast
+    assert isinstance(result, CursorResult)
+    revoked = result.rowcount
     record_audit_sync(
         db,
         actor_type="admin",
