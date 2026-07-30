@@ -319,7 +319,10 @@ def execute_standard_analysis(
 
 
 # 经真实端到端验证的供应商（00-master：验证通过前不虚标；合成实现永不入列）
-_VERIFIED_PROVIDERS: frozenset[str] = frozenset()
+# deepseek：2026-07-30 三链路实跑验证通过（docs/16-real-model-verification.md）。
+# 语义是"该 run 的产出确实来自真实供应商"（按 run.provider 逐条判断），
+# 合成 run 永远 verified=False；当前模型可用性另看 capabilities 三态。
+_VERIFIED_PROVIDERS: frozenset[str] = frozenset({"deepseek"})
 
 
 def provider_verified(provider: str) -> bool:

@@ -22,12 +22,19 @@ EXPECTED_CAPABILITIES = {
 
 # 阶段 3：本机真实解析集成测试通过的两项 ready；
 # 阶段 5：matching_basic（硬条件+确定性向量召回+评分+反馈）经真实
-# PG(pgvector)/Redis 容器集成测试验证 → ready。aliyun_embedding 无 key，
-# 保持 not_verified。
-READY_CAPABILITIES = {"resume_parse_pdf", "resume_parse_docx", "matching_basic"}
+# PG(pgvector)/Redis 容器集成测试验证 → ready；
+# 阶段 11 P0（2026-07-30，docs/16）：standard_analysis 管线与 DOCX/PDF 导出
+# 经真实 DeepSeek 三链路实跑验证 → ready（产出真实性另由 deepseek_generation
+# 三态反映，不在此虚标）。
 
-# 阶段 6（ADR-001 裁剪）：standard_analysis 管道经集成测试打通，但无真实
-# DEEPSEEK_API_KEY（确定性合成 Adapter 产出，报告标 not_verified）→ 保持 not_verified。
+READY_CAPABILITIES = {
+    "resume_parse_pdf",
+    "resume_parse_docx",
+    "matching_basic",
+    "standard_analysis",
+    "docx_export",
+    "pdf_export",
+}
 
 # 阶段 4：BOSS 无允许的自动访问方式，能力如实标 import_only（绝不显示采集正常）
 IMPORT_ONLY_CAPABILITIES = {"job_source:boss"}
@@ -90,6 +97,14 @@ async def test_model_capabilities_three_state_without_key(client):
     assert caps["deepseek_generation"]["active_adapter"] == "synthetic"
     assert caps["aliyun_embedding"]["active_adapter"] == "synthetic"
     assert caps["qwen_fallback"]["active_adapter"] is None
+    # 2026-07-30 实跑证据已留档（docs/16），但那只是历史证据——
+    # 上面已断言当前 status 仍是 not_configured，绝不因证据虚标可用
+    deepseek_evidence = caps["deepseek_generation"]["last_verified"]
+    assert deepseek_evidence is not None
+    assert deepseek_evidence["evidence"] == "docs/16-real-model-verification.md"
+    # 从未验证的能力证据必须为 None（不许占位）
+    assert caps["qwen_fallback"]["last_verified"] is None
+    assert caps["aliyun_embedding"]["last_verified"] is None
 
 
 async def test_model_capability_probed_available(client, monkeypatch):

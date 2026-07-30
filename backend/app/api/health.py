@@ -36,16 +36,20 @@ _ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
 # 阶段 6（ADR-001 裁剪）：standard_analysis 管道（Model Gateway + 单模型标准分析）
 # 经集成测试打通，但无真实 DEEPSEEK_API_KEY，只有确定性合成 Adapter 产出
 # （报告如实标注 not_verified）→ 能力保持 not_verified；多 Agent（LangGraph）推迟。
+# 阶段 11 P0（2026-07-30，docs/16）：真实 DeepSeek 三链路实跑验证——
+# standard_analysis 管线（编排+授权门控+证据校验+落库）与 DOCX/PDF 导出
+# 经真实模型端到端跑通 → ready。注意：ready 指管线本身；当前产出是否来自
+# 真实模型，由下方 deepseek_generation 三态（configured/runtime）如实反映。
 CAPABILITIES: dict[str, str] = {
     "job_source:fixture_a": "not_verified",
     "job_source:fixture_b": "not_verified",
     "job_source:boss": "import_only",
     "matching_basic": "ready",
-    "standard_analysis": "not_verified",
+    "standard_analysis": "ready",
     "resume_parse_pdf": "ready",
     "resume_parse_docx": "ready",
-    "docx_export": "not_verified",
-    "pdf_export": "not_verified",
+    "docx_export": "ready",
+    "pdf_export": "ready",
     "email_magic_link": "not_verified",
 }
 
@@ -65,8 +69,15 @@ _MODEL_PROBE_TTL_SECONDS = 600.0
 # 历史验证证据（脱敏留档见 docs/16-real-model-verification.md）；
 # 未验证的能力必须为 None，不许占位。
 MODEL_VERIFICATION_EVIDENCE: dict[str, dict[str, str] | None] = {
-    "deepseek_generation": None,
+    # 2026-07-30 本机 demo 环境实跑：标准分析 + 定制简历 + 无效 key 失败路径
+    # 三链路全部通过（真实 token 用量与结论见 docs/16）。这只是历史证据。
+    "deepseek_generation": {
+        "verified_at": "2026-07-30",
+        "model_id": "deepseek-chat",
+        "evidence": "docs/16-real-model-verification.md",
+    },
     "qwen_fallback": None,
+    # Embedding 仍为确定性合成向量，从未真实验证（docs/15 P0 第 5 条）
     "aliyun_embedding": None,
 }
 
