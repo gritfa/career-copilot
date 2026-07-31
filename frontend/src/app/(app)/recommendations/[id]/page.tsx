@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
 import { AnalysisSection } from "@/components/AnalysisSection";
 import { TailorSection } from "@/components/TailorSection";
-import { FeedbackActions } from "@/components/RecommendationCard";
+import { FeedbackActions, ScoreBadge, gradeTone } from "@/components/RecommendationCard";
+import Card from "@/components/ui/Card";
+import Badge, { SyntheticBadge, type BadgeTone } from "@/components/ui/Badge";
+import { buttonClasses } from "@/components/ui/Button";
+import Skeleton from "@/components/ui/Skeleton";
+import { IconArrowLeft, IconExternalLink } from "@/components/ui/icons";
 import {
   HARD_STATUS_META,
   type HardConditionItem,
+  type HardConditionStatus,
   type MatchComponent,
   type MatchEvidence,
   type Recommendation,
@@ -21,7 +27,6 @@ import {
   evidenceFactText,
   evidenceJobText,
   fmtTime,
-  gradeBadgeClass,
   gradeName,
   hardConditionLabel,
   isSyntheticSeed,
@@ -68,6 +73,32 @@ function unwrapRecommendation(data: unknown): Recommendation | null {
 
 const INSUFFICIENT = "信息不足";
 
+/** 硬条件三态 → 徽标语义色 */
+const HARD_STATUS_TONES: Record<HardConditionStatus, BadgeTone> = {
+  passed: "success",
+  failed: "danger",
+  unknown: "warning",
+};
+
+/** 区块标题 + 内容的统一包装 */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-7">
+      <h2 className="mb-2.5 text-lg font-semibold text-slate-900">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/** 原文证据片段（左侧主色竖线 + 浅灰底） */
+function Evidence({ children }: { children: ReactNode }) {
+  return (
+    <div className="my-2 whitespace-pre-wrap break-words rounded-r-lg border-l-3 border-indigo-200 bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-600">
+      {children}
+    </div>
+  );
+}
+
 type PageState =
   | { kind: "loading" }
   | { kind: "error"; reason: string }
@@ -105,14 +136,27 @@ export default function RecommendationDetailPage() {
 
   return (
     <main className="page">
-      <p style={{ marginBottom: 12 }}>
-        <Link href="/recommendations" className="link">
-          ← 返回每日推荐
+      <p className="mb-4">
+        <Link
+          href="/recommendations"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-primary"
+        >
+          <IconArrowLeft className="h-4 w-4" />
+          返回每日推荐
         </Link>
       </p>
 
-      {state.kind === "loading" ? <p className="muted">加载中…</p> : null}
-      {state.kind === "error" ? <p className="error-text">{state.reason}</p> : null}
+      {state.kind === "loading" ? (
+        <div aria-label="加载中">
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="mt-3 h-4 w-1/2" />
+          <Skeleton className="mt-6 h-40 w-full rounded-xl" />
+          <Skeleton className="mt-4 h-40 w-full rounded-xl" />
+        </div>
+      ) : null}
+      {state.kind === "error" ? (
+        <p className="text-sm text-danger">{state.reason}</p>
+      ) : null}
       {state.kind === "ready" ? <DetailBody rec={state.rec} /> : null}
     </main>
   );
@@ -130,11 +174,14 @@ function DetailBody({ rec }: { rec: Recommendation }) {
 
       <AnalysisSection recommendationId={rec.id} />
 
-      <h2>反馈</h2>
-      <div className="card">
-        <p className="muted">你的反馈会用于调整后续推荐，可随时撤回。</p>
-        <FeedbackActions recommendationId={rec.id} initial={parseFeedback(rec)} />
-      </div>
+      <Section title="反馈">
+        <Card>
+          <p className="mb-3 text-sm text-slate-600">
+            你的反馈会用于调整后续推荐，可随时撤回。
+          </p>
+          <FeedbackActions recommendationId={rec.id} initial={parseFeedback(rec)} />
+        </Card>
+      </Section>
 
       <TailorSection recommendationId={rec.id} />
     </>
@@ -151,40 +198,25 @@ function JobInfoSection({ rec }: { rec: Recommendation }) {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0 }}>{recTitle(rec)}</h1>
-          {isSyntheticSeed(rec) ? (
-            <span className="badge" title="该岗位为合成种子数据，仅用于产品演示，非真实在招岗位">
-              合成示例
-            </span>
-          ) : null}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <span className="inline-flex flex-wrap items-center gap-2.5">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {recTitle(rec)}
+          </h1>
+          {isSyntheticSeed(rec) ? <SyntheticBadge /> : null}
         </span>
-        {rec.score != null || rec.grade ? (
-          <span className={gradeBadgeClass(rec.grade)}>
-            {rec.score != null ? `${rec.score} 分` : ""}
-            {rec.grade ? `${rec.score != null ? " · " : ""}${gradeName(rec.grade)}` : ""}
-          </span>
-        ) : null}
+        <ScoreBadge item={rec} />
       </div>
 
-      <p style={{ marginTop: 4 }}>
+      <p className="mt-1.5 text-sm text-slate-700">
         {recCompany(rec)}
         {" · "}
         {recCity(rec)}
         {rec.work_mode ? ` · ${workModeLabel(rec.work_mode)}` : ""}
         {" · "}
-        {recSalaryText(rec)}
+        <span className="font-medium">{recSalaryText(rec)}</span>
       </p>
-      <p className="muted" style={{ marginTop: 4 }}>
+      <p className="mt-1 text-xs text-slate-400">
         {published ? `发布于 ${fmtTime(published)}` : null}
         {published && firstSeen ? " · " : null}
         {firstSeen ? `发现于 ${fmtTime(firstSeen)}` : null}
@@ -193,37 +225,37 @@ function JobInfoSection({ rec }: { rec: Recommendation }) {
         {!published && !firstSeen && !source ? `发布/来源${INSUFFICIENT}` : null}
       </p>
 
-      <h2>原始岗位信息</h2>
-      <div className="card">
-        {description ? (
-          <div className="evidence">{description}</div>
-        ) : (
-          <p className="muted">职位描述原文{INSUFFICIENT}。</p>
-        )}
-        <p style={{ marginTop: 8, fontSize: 14 }}>
-          <strong>全部来源链接</strong>
-          （去重后保留的所有来源）：
-        </p>
-        {sourceLinks.length > 0 ? (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            {sourceLinks.map((entry, i) => (
-              <a
-                key={`${entry.url}-${i}`}
-                className="btn"
-                href={entry.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {entry.label} ↗
-              </a>
-            ))}
-          </div>
-        ) : (
-          <p className="muted" style={{ marginTop: 6 }}>
-            暂无可展示的来源链接。
+      <Section title="原始岗位信息">
+        <Card>
+          {description ? (
+            <Evidence>{description}</Evidence>
+          ) : (
+            <p className="text-sm text-slate-600">职位描述原文{INSUFFICIENT}。</p>
+          )}
+          <p className="mt-3 text-sm text-slate-900">
+            <strong>全部来源链接</strong>
+            <span className="text-slate-600">（去重后保留的所有来源）：</span>
           </p>
-        )}
-      </div>
+          {sourceLinks.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {sourceLinks.map((entry, i) => (
+                <a
+                  key={`${entry.url}-${i}`}
+                  className={buttonClasses("secondary", "sm")}
+                  href={entry.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {entry.label}
+                  <IconExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1.5 text-sm text-slate-400">暂无可展示的来源链接。</p>
+          )}
+        </Card>
+      </Section>
     </>
   );
 }
@@ -236,54 +268,46 @@ function HardConditionsSection({ rec }: { rec: Recommendation }) {
   const overallMeta = HARD_STATUS_META[overall];
 
   return (
-    <>
-      <h2>硬条件结果</h2>
-      <div className="card">
+    <Section title="硬条件结果">
+      <Card>
         {hard ? (
-          <p style={{ fontSize: 14 }}>
+          <p className="flex items-center gap-2 text-sm text-slate-700">
             总体：
-            <span className={overallMeta.badgeClass}>
+            <Badge tone={HARD_STATUS_TONES[overall]}>
               {overallMeta.icon} {overallMeta.label}
-            </span>
+            </Badge>
           </p>
         ) : (
-          <p className="muted">硬条件结果{INSUFFICIENT}。</p>
+          <p className="text-sm text-slate-600">硬条件结果{INSUFFICIENT}。</p>
         )}
         {items.map((item, i) => {
-          const meta = HARD_STATUS_META[normalizeHardStatus(item.status)];
+          const status = normalizeHardStatus(item.status);
+          const meta = HARD_STATUS_META[status];
           const evidence = item.evidence ?? item.detail ?? item.reason ?? "";
           return (
             <div
               key={`${item.code ?? item.name ?? "cond"}-${i}`}
-              style={{
-                borderTop: "1px solid rgba(127,127,127,0.25)",
-                marginTop: 10,
-                paddingTop: 10,
-              }}
+              className="mt-3 border-t border-slate-100 pt-3"
             >
-              <p style={{ fontSize: 14 }}>
-                <span className={meta.badgeClass}>
+              <p className="flex items-center gap-2 text-sm text-slate-900">
+                <Badge tone={HARD_STATUS_TONES[status]}>
                   {meta.icon} {meta.label}
-                </span>{" "}
-                {hardConditionLabel(item)}
+                </Badge>
+                <span className="font-medium">{hardConditionLabel(item)}</span>
               </p>
               {evidence ? (
-                <div className="evidence">{evidence}</div>
+                <Evidence>{evidence}</Evidence>
               ) : (
-                <p className="muted" style={{ marginTop: 4 }}>
-                  证据{INSUFFICIENT}。
-                </p>
+                <p className="mt-1 text-sm text-slate-400">证据{INSUFFICIENT}。</p>
               )}
             </div>
           );
         })}
         {hard && items.length === 0 ? (
-          <p className="muted" style={{ marginTop: 6 }}>
-            未返回逐项硬条件明细。
-          </p>
+          <p className="mt-1.5 text-sm text-slate-400">未返回逐项硬条件明细。</p>
         ) : null}
-      </div>
-    </>
+      </Card>
+    </Section>
   );
 }
 
@@ -292,59 +316,58 @@ function ScoreSection({ rec }: { rec: Recommendation }) {
   const components: MatchComponent[] = Array.isArray(rec.components) ? rec.components : [];
 
   return (
-    <>
-      <h2>总分与分项分数</h2>
-      <div className="card">
-        <p>
-          <span style={{ fontSize: 26, fontWeight: "bold" }}>
+    <Section title="总分与分项分数">
+      <Card>
+        <p className="flex flex-wrap items-baseline gap-2">
+          <span className="text-3xl font-bold tracking-tight text-slate-900">
             {rec.score != null ? rec.score : "—"}
           </span>
-          <span className="muted"> / 100</span>{" "}
+          <span className="text-sm text-slate-400">/ 100</span>
           {rec.grade ? (
-            <span className={gradeBadgeClass(rec.grade)}>{gradeName(rec.grade)}</span>
+            <Badge tone={gradeTone(rec.grade)}>{gradeName(rec.grade)}</Badge>
           ) : null}
         </p>
-        <p className="muted" style={{ marginTop: 4 }}>
+        <p className="mt-1 text-sm text-slate-600">
           分数代表岗位适配度，不代表面试或录用概率。
         </p>
 
         {components.length > 0 ? (
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+          <div className="mt-4 grid gap-3">
             {components.map((c, i) => {
               const weight = componentWeight(c);
-              const score = typeof c.score === "number" ? Math.max(0, Math.min(100, c.score)) : null;
+              const score =
+                typeof c.score === "number" ? Math.max(0, Math.min(100, c.score)) : null;
               return (
                 <div key={`${c.name ?? c.code ?? "component"}-${i}`}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 14,
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span>
+                  <div className="mb-1 flex justify-between text-sm">
+                    <span className="text-slate-700">
                       {componentLabel(c)}
                       {weight != null ? (
-                        <span className="muted">（权重 {weight}%）</span>
+                        <span className="text-slate-400">（权重 {weight}%）</span>
                       ) : null}
                     </span>
-                    <span>{score != null ? `${score} 分` : INSUFFICIENT}</span>
+                    <span className="font-medium text-slate-900">
+                      {score != null ? `${score} 分` : INSUFFICIENT}
+                    </span>
                   </div>
-                  <div className="bar" aria-hidden="true">
-                    <div className="bar-fill" style={{ width: `${score ?? 0}%` }} />
+                  <div
+                    className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"
+                    aria-hidden="true"
+                  >
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${score ?? 0}%` }}
+                    />
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <p className="muted" style={{ marginTop: 10 }}>
-            分项分数{INSUFFICIENT}。
-          </p>
+          <p className="mt-3 text-sm text-slate-400">分项分数{INSUFFICIENT}。</p>
         )}
-      </div>
-    </>
+      </Card>
+    </Section>
   );
 }
 
@@ -359,57 +382,58 @@ function EvidenceSection({ rec }: { rec: Recommendation }) {
     .filter((g) => g.evidence.length > 0);
 
   return (
-    <>
-      <h2>匹配证据</h2>
+    <Section title="匹配证据">
       {groups.length === 0 ? (
-        <div className="card">
-          <p className="muted">匹配证据{INSUFFICIENT}，不展示无证据的结论。</p>
-        </div>
+        <Card>
+          <p className="text-sm text-slate-600">
+            匹配证据{INSUFFICIENT}，不展示无证据的结论。
+          </p>
+        </Card>
       ) : (
         groups.map((group) => (
-          <div className="card" key={group.label}>
-            <strong style={{ fontSize: 14 }}>{group.label}</strong>
+          <Card key={group.label} className="mb-3">
+            <Badge tone="info">{group.label}</Badge>
             {group.evidence.map((e, i) => {
               const fact = evidenceFactText(e);
               const jobText = evidenceJobText(e);
               return (
                 <div
                   key={i}
-                  style={{
-                    borderTop: i > 0 ? "1px solid rgba(127,127,127,0.25)" : undefined,
-                    marginTop: 10,
-                    paddingTop: i > 0 ? 10 : 0,
-                  }}
+                  className={i > 0 ? "mt-3 border-t border-slate-100 pt-3" : "mt-3"}
                 >
-                  {e.claim ? <p style={{ fontSize: 14 }}>{e.claim}</p> : null}
-                  <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>
-                    简历事实：
-                  </p>
-                  {fact ? (
-                    <div className="evidence">{fact}</div>
-                  ) : (
-                    <p className="muted">{INSUFFICIENT}</p>
-                  )}
-                  <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>
-                    岗位原文：
-                  </p>
-                  {jobText ? (
-                    <div className="evidence">{jobText}</div>
-                  ) : (
-                    <p className="muted">{INSUFFICIENT}</p>
-                  )}
+                  {e.claim ? (
+                    <p className="text-sm font-medium text-slate-900">{e.claim}</p>
+                  ) : null}
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[13px] font-medium text-slate-500">简历事实：</p>
+                      {fact ? (
+                        <Evidence>{fact}</Evidence>
+                      ) : (
+                        <p className="text-sm text-slate-400">{INSUFFICIENT}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-medium text-slate-500">岗位原文：</p>
+                      {jobText ? (
+                        <Evidence>{jobText}</Evidence>
+                      ) : (
+                        <p className="text-sm text-slate-400">{INSUFFICIENT}</p>
+                      )}
+                    </div>
+                  </div>
                   {e.uncertainty ? (
-                    <p className="muted" style={{ marginTop: 4 }}>
+                    <p className="mt-1 text-sm text-amber-700">
                       不确定性：{e.uncertainty}
                     </p>
                   ) : null}
                 </div>
               );
             })}
-          </div>
+          </Card>
         ))
       )}
-    </>
+    </Section>
   );
 }
 
@@ -417,20 +441,19 @@ function EvidenceSection({ rec }: { rec: Recommendation }) {
 function GapsSection({ rec }: { rec: Recommendation }) {
   const gaps = recGaps(rec);
   return (
-    <>
-      <h2>关键缺口</h2>
-      <div className="card">
+    <Section title="关键缺口">
+      <Card>
         {gaps.length > 0 ? (
-          <ul style={{ margin: "0 0 0 18px", lineHeight: 1.8, fontSize: 14 }}>
+          <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate-700">
             {gaps.map((gap, i) => (
               <li key={i}>{gap}</li>
             ))}
           </ul>
         ) : (
-          <p className="muted">关键缺口{INSUFFICIENT}。</p>
+          <p className="text-sm text-slate-600">关键缺口{INSUFFICIENT}。</p>
         )}
-      </div>
-    </>
+      </Card>
+    </Section>
   );
 }
 
@@ -438,40 +461,39 @@ function GapsSection({ rec }: { rec: Recommendation }) {
 function RisksSection({ rec }: { rec: Recommendation }) {
   const risks: RiskSignal[] = Array.isArray(rec.risks) ? rec.risks : [];
   return (
-    <>
-      <h2>风险信号</h2>
+    <Section title="风险信号">
       {risks.length === 0 ? (
-        <div className="card">
-          <p className="muted">未识别到明显风险信号。</p>
-        </div>
+        <Card>
+          <p className="text-sm text-slate-600">未识别到明显风险信号。</p>
+        </Card>
       ) : (
         risks.map((risk, i) => {
           const severity = RISK_SEVERITY_NAMES[(risk.severity ?? "").toLowerCase()];
           return (
-            <div className="card" key={`${risk.code ?? risk.name ?? "risk"}-${i}`}>
-              <p style={{ fontSize: 14 }}>
-                <span className="badge badge-busy">{riskName(risk)}</span>
-                {severity ? <span className="muted">（{severity}风险）</span> : null}
+            <Card className="mb-3" key={`${risk.code ?? risk.name ?? "risk"}-${i}`}>
+              <p className="flex flex-wrap items-center gap-1.5 text-sm">
+                <Badge tone="warning">{riskName(risk)}</Badge>
+                {severity ? (
+                  <span className="text-slate-600">（{severity}风险）</span>
+                ) : null}
                 {riskUncertain(risk) ? (
-                  <span className="muted"> · 该判断存在不确定性，仅供参考</span>
+                  <span className="text-slate-400">
+                    · 该判断存在不确定性，仅供参考
+                  </span>
                 ) : null}
               </p>
               {risk.evidence ? (
-                <div className="evidence">{risk.evidence}</div>
+                <Evidence>{risk.evidence}</Evidence>
               ) : (
-                <p className="muted" style={{ marginTop: 6 }}>
-                  原文证据{INSUFFICIENT}。
-                </p>
+                <p className="mt-1.5 text-sm text-slate-400">原文证据{INSUFFICIENT}。</p>
               )}
               {risk.note ? (
-                <p className="muted" style={{ marginTop: 4 }}>
-                  {risk.note}
-                </p>
+                <p className="mt-1 text-sm text-slate-600">{risk.note}</p>
               ) : null}
-            </div>
+            </Card>
           );
         })
       )}
-    </>
+    </Section>
   );
 }
