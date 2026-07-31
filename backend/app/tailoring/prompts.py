@@ -14,10 +14,21 @@ from typing import Any
 from app.db.models import MatchComponent, ProfileFact
 from app.integrations.llm_gateway import LLMRequest
 from app.resumes.parser import PROTECTED_FACT_TYPES
-from app.tailoring.schemas import TEMPLATE_ID
+from app.tailoring.schemas import TEMPLATE_ID, TailoredResumeDraft
 
-TAILOR_PROMPT_VERSION = "tailor_prompt_v1"
+# v2（阶段 11 P0）：prompt 内嵌输出 JSON Schema（与 agents/prompts 同一根因——
+# v1 只列顶层字段名，真实模型无法得知嵌套对象结构）。
+TAILOR_PROMPT_VERSION = "tailor_prompt_v2"
 TAILOR_INPUT_VERSION = "tailor_input_v1"
+
+# 目标输出 Schema（由 pydantic 模型确定性生成，随模型定义自动同步）
+_OUTPUT_SCHEMA_JSON = json.dumps(
+    TailoredResumeDraft.model_json_schema(), ensure_ascii=False, sort_keys=True
+)
+
+# 定制简历输出（多 section + 逐条 changes）明显长于分析报告，
+# 默认 2048 token 有截断风险（截断 = 坏 JSON = 白付一次费用）
+_TAILOR_MAX_OUTPUT_TOKENS = 4096
 
 # 事实 value_json 中即使意外出现联系方式类键也不进 prompt（与 agents/prompts 一致）
 _DROPPED_VALUE_KEYS = frozenset({"phone", "mobile", "email", "wechat", "qq", "address"})
@@ -97,11 +108,18 @@ def build_tailor_request(input_doc: dict[str, Any]) -> LLMRequest:
     """输入文档 → Gateway 请求（提示词正文绝不入日志）。"""
     payload = json.dumps(input_doc, ensure_ascii=False, sort_keys=True)
     user = (
-        "请基于以下输入文档产出岗位定制简历 JSON"
-        "（字段：schema_version/content/changes）。\n"
+        "请基于以下输入文档产出岗位定制简历 JSON。\n"
+        "输出必须是单个 JSON 对象，严格符合以下 JSON Schema：不得增删字段、"
+        "不得改变嵌套结构，数组元素必须是 Schema 定义的对象而不是字符串。\n"
+        f"<OUTPUT_SCHEMA>\n{_OUTPUT_SCHEMA_JSON}\n</OUTPUT_SCHEMA>\n"
         f"{INPUT_START}\n{payload}\n{INPUT_END}"
     )
-    return LLMRequest(system=_SYSTEM_PROMPT, user=user, schema_name="resume_tailor_v1")
+    return LLMRequest(
+        system=_SYSTEM_PROMPT,
+        user=user,
+        schema_name="resume_tailor_v1",
+        max_output_tokens=_TAILOR_MAX_OUTPUT_TOKENS,
+    )
 
 
 def extract_tailor_input(user_message: str) -> dict[str, Any] | None:
