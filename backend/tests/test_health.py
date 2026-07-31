@@ -43,6 +43,14 @@ IMPORT_ONLY_CAPABILITIES = {"job_source:boss"}
 # 不再是单一字符串；当前可用性只看 configured + runtime，历史证据独立留档。
 MODEL_CAPABILITIES = {"deepseek_generation", "qwen_fallback", "aliyun_embedding"}
 
+# 三态对象契约（scripts/acceptance.py step_health 用同一契约做验收 Gate；
+# PR#4 review 第 1 条：CI 用本契约测试拦住结构漂移，验收脚本不再是唯一防线）
+MODEL_REQUIRED_FIELDS = {
+    "status", "configured", "runtime", "runtime_checked_at", "active_adapter", "last_verified",
+}
+MODEL_STATUS_DOMAIN = {"not_configured", "configured", "available", "unavailable"}
+MODEL_RUNTIME_DOMAIN = {"not_probed", "available", "unavailable"}
+
 
 @pytest.fixture(autouse=True)
 def _clear_probe_cache():
@@ -78,6 +86,67 @@ async def test_capabilities_only_verified_ready(client):
             assert status == "not_verified", (
                 f"capability {name} must be not_verified, got {status}"
             )
+
+
+def _assert_three_state_contract(entry: dict, name: str) -> None:
+    """三态对象结构契约：字段齐全、取值域合法、status 严格由 configured/runtime 推导。"""
+    assert isinstance(entry, dict), f"能力 {name} 应为三态对象，实际: {entry!r}"
+    missing = MODEL_REQUIRED_FIELDS - set(entry)
+    assert not missing, f"能力 {name} 缺字段: {sorted(missing)}"
+    assert isinstance(entry["configured"], bool), name
+    assert entry["status"] in MODEL_STATUS_DOMAIN, f"{name}: {entry['status']!r}"
+    assert entry["runtime"] in MODEL_RUNTIME_DOMAIN, f"{name}: {entry['runtime']!r}"
+    if entry["runtime_checked_at"] is not None:
+        assert isinstance(entry["runtime_checked_at"], str), name
+    if entry["last_verified"] is not None:
+        assert isinstance(entry["last_verified"], dict), name
+        assert {"verified_at", "model_id", "evidence"} <= set(entry["last_verified"]), name
+    # 证据不升级当前态：status 只能由 configured + runtime 推导，
+    # last_verified 有无历史证据都不许改变它
+    expected = (
+        "not_configured" if not entry["configured"]
+        else {"available": "available", "unavailable": "unavailable"}.get(
+            entry["runtime"], "configured")
+    )
+    assert entry["status"] == expected, (
+        f"能力 {name} status={entry['status']} 与 configured/runtime 推导不符（应为 {expected}）"
+    )
+    if not entry["configured"]:
+        assert entry["runtime"] == "not_probed", f"能力 {name} 无 key 却报探测结果（虚标）"
+
+
+async def test_capabilities_contract_three_state_structure(client):
+    """契约测试（PR#4 review 第 1 条）：钉死 /health/capabilities 三态返回结构。
+
+    验收脚本 step_health 依赖此结构；此前结构改动只有验收脚本能发现而 CI
+    不跑验收脚本 → 负责人 Windows 实测才暴露。此测试让 CI 直接拦住结构漂移。
+    """
+    caps = (await client.get("/health/capabilities")).json()["capabilities"]
+    for name in MODEL_CAPABILITIES:
+        _assert_three_state_contract(caps[name], name)
+    # 非模型能力保持字符串状态（两类形态不得混淆）
+    for name in EXPECTED_CAPABILITIES - MODEL_CAPABILITIES:
+        assert isinstance(caps[name], str), f"非模型能力 {name} 应为字符串状态"
+
+
+async def test_capabilities_contract_holds_with_key_probed(client, monkeypatch):
+    """有 key + 探测通过的形态同样满足契约（验收有 key 环境 available 也 PASS）。"""
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key-for-contract-test")
+    get_settings.cache_clear()
+
+    async def _probe_ok(self):
+        return True
+
+    monkeypatch.setattr(health_module.DeepSeekAdapter, "probe_runtime", _probe_ok)
+    try:
+        caps = (await client.get("/health/capabilities")).json()["capabilities"]
+        for name in MODEL_CAPABILITIES:
+            _assert_three_state_contract(caps[name], name)
+        assert caps["deepseek_generation"]["status"] == "available"
+    finally:
+        get_settings.cache_clear()
 
 
 async def test_model_capabilities_three_state_without_key(client):
