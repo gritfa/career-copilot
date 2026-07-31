@@ -42,6 +42,12 @@ function Stop-Proc($name) {
 
 function Start-Proc($name, $workdir, $exe, $argList) {
     Stop-Proc $name
+    # npm/npx 在 Windows 上是 .cmd 批处理，Start-Process 直接跑无扩展名的会命中
+    # Git for Windows 的 sh 脚本（"%1 不是有效的 Win32 应用程序"），统一用 cmd.exe 包装
+    if ($exe -in @("npm", "npx")) {
+        $argList = @("/d", "/c", "$exe.cmd") + $argList
+        $exe = "$env:ComSpec"
+    }
     Info "启动 $name：$exe $($argList -join ' ')"
     $proc = Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $workdir `
         -RedirectStandardOutput (Join-Path $LogDir "$name.log") `
