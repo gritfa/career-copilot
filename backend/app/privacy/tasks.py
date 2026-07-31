@@ -8,7 +8,7 @@
 
 import uuid
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
@@ -21,7 +21,7 @@ from app.privacy.service import (
 from app.tasks.celery_app import celery_app
 
 
-def _session() -> tuple[Session, object]:
+def _session() -> tuple[Session, Engine]:
     engine = create_engine(get_settings().sync_database_url, poolclass=NullPool)
     return Session(engine), engine
 

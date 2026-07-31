@@ -20,6 +20,8 @@ from app.agents.schemas import (
     AnalysisClaim,
     AnalysisGap,
     AnalysisRisk,
+    ClaimStrength,
+    GapSeverity,
     ResumeSuggestion,
     StandardAnalysisReport,
 )
@@ -28,8 +30,16 @@ from app.integrations.llm_gateway import LLMRawResponse, LLMRequest
 _MAX_STRENGTHS = 10
 _MAX_SUGGESTIONS = 8
 
-_STRENGTH_VALUES = {"strong", "moderate", "weak"}
-_SEVERITY_BY_GAP_LEVEL = {"minor": "minor", "major": "major"}
+_SEVERITY_BY_GAP_LEVEL: dict[str, GapSeverity] = {"minor": "minor", "major": "major"}
+
+
+def _coerce_strength(value: str) -> ClaimStrength:
+    """输入文档里的自由字符串 → 词表内取值；词表外一律回落 moderate。"""
+    if value == "strong":
+        return "strong"
+    if value == "weak":
+        return "weak"
+    return "moderate"
 
 _COMPONENT_LABELS = {
     "core_skills": "核心技能",
@@ -112,7 +122,7 @@ def _build_report(input_doc: dict[str, Any]) -> StandardAnalysisReport:
                     claim=claim,
                     profile_fact_ids=fact_ids,
                     job_span=span,
-                    strength=strength if strength in _STRENGTH_VALUES else "moderate",
+                    strength=_coerce_strength(strength),
                     uncertainty=(
                         str(ref["uncertainty"]) if ref.get("uncertainty") else None
                     ),

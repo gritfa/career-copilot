@@ -8,7 +8,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -21,8 +21,8 @@ WorkMode = Literal["onsite", "hybrid", "remote"]
 PlanStatus = Literal["active", "paused", "archived"]
 PreferenceKind = Literal["follow", "priority", "block"]
 
-assert set(RoleFamily.__args__) == set(ROLE_FAMILIES)  # 词表与常量保持同步
-assert set(WorkMode.__args__) == set(WORK_MODES)
+assert set(get_args(RoleFamily)) == set(ROLE_FAMILIES)  # 词表与常量保持同步
+assert set(get_args(WorkMode)) == set(WORK_MODES)
 
 
 def _validate_city_codes(codes: list[str]) -> list[str]:

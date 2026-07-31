@@ -16,6 +16,9 @@ OUTPUT_SCHEMA_VERSION = "std_analysis_v1"
 GRAPH_VERSION = "single_model_v1"  # 多 Agent（LangGraph）按 ADR-001 D2 推迟
 
 AgentRunStatus = Literal["queued", "analyzing", "validating", "completed", "failed"]
+AgentRunTrigger = Literal["auto", "manual"]
+ClaimStrength = Literal["strong", "moderate", "weak"]
+GapSeverity = Literal["minor", "major", "unknown"]
 
 INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
@@ -26,7 +29,7 @@ class AnalysisClaim(BaseModel):
     claim: str
     profile_fact_ids: list[str] = Field(default_factory=list)
     job_span: str = ""
-    strength: Literal["strong", "moderate", "weak"] = "moderate"
+    strength: ClaimStrength = "moderate"
     uncertainty: str | None = None
 
 
@@ -35,7 +38,7 @@ class AnalysisGap(BaseModel):
 
     description: str
     job_span: str = ""
-    severity: Literal["minor", "major", "unknown"] = "unknown"
+    severity: GapSeverity = "unknown"
     uncertainty: str | None = None
 
 
@@ -75,7 +78,7 @@ class AgentRunOut(BaseModel):
     id: uuid.UUID
     recommendation_id: uuid.UUID
     status: AgentRunStatus
-    trigger: Literal["auto", "manual"]
+    trigger: AgentRunTrigger
     provider: str
     model_id: str | None
     # 合成/未经真实模型验证的结果必须如实标注（00-master：不虚标能力）

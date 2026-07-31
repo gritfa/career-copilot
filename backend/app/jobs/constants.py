@@ -39,3 +39,18 @@ SOURCE_KEY_FIXTURE_A = "fixture_a"
 SOURCE_KEY_FIXTURE_B = "fixture_b"
 SOURCE_KEY_BOSS = "boss"
 SOURCE_KEY_USER_IMPORT = "user_import"
+# 演示种子来源（阶段 11 P1）：全部内容为合成数据，绝不含真实公司在招岗位正文
+SOURCE_KEY_SYNTHETIC_SEED = "synthetic_seed"
+
+# canonical_jobs.data_origin 受控词表（阶段 11 P1）：
+# - connector：连接器采集（当前仅合成 fixture 连接器）
+# - user_import：用户手动导入（正文/URL）
+# - synthetic_seed：演示种子数据——前端必须在列表/详情展示「合成示例」徽标
+DATA_ORIGIN_CONNECTOR = "connector"
+DATA_ORIGIN_USER_IMPORT = "user_import"
+DATA_ORIGIN_SYNTHETIC_SEED = "synthetic_seed"
+DATA_ORIGINS: tuple[str, ...] = (
+    DATA_ORIGIN_CONNECTOR,
+    DATA_ORIGIN_USER_IMPORT,
+    DATA_ORIGIN_SYNTHETIC_SEED,
+)

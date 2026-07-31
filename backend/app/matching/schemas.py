@@ -57,6 +57,8 @@ class RecommendationSummaryOut(BaseModel):
     job_title: str
     company_name: str | None
     city_code: str | None
+    # 岗位数据来源（阶段 11 P1）：synthetic_seed 时前端必须展示「合成示例」徽标
+    data_origin: str
     score: int
     grade: str
     hard_filter_status: str
@@ -90,6 +92,8 @@ class RecommendationDetailOut(BaseModel):
     job_title: str
     company_name: str | None
     city_code: str | None
+    # 岗位数据来源（阶段 11 P1）：synthetic_seed 时前端必须展示「合成示例」徽标
+    data_origin: str
     description_text: str | None
     salary_raw: str | None
     score: int

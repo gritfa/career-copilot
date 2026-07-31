@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit
 from app.auth.deps import AuthContext, ensure_owner, require_active_user, require_user
+from app.companies.resolver import company_name_fields
 from app.core.errors import AppError
 from app.core.security import hash_ip
 from app.db.models import Company, CompanyPreference, LearnedPreference, SearchPlan
@@ -24,6 +25,7 @@ from app.search_plans.schemas import (
     CompanyPreferenceOut,
     CompanyPreferencesOut,
     CompanyPreferencesPutRequest,
+    LinkOutURL,
     ResetLearnedOut,
     SearchPlanCreateRequest,
     SearchPlanListOut,
@@ -59,7 +61,11 @@ def _plan_out(plan: SearchPlan) -> SearchPlanOut:
         base_resume_version_id=plan.base_resume_version_id,
         created_at=plan.created_at,
         updated_at=plan.updated_at,
-        link_out_urls=build_plan_search_urls(plan.role_family, list(plan.city_codes)),
+        # boss 适配器返回 dict（不反向依赖本模块 schema），此处运行时真校验成模型
+        link_out_urls=[
+            LinkOutURL.model_validate(item)
+            for item in build_plan_search_urls(plan.role_family, list(plan.city_codes))
+        ],
     )
 
 
@@ -323,7 +329,12 @@ async def put_company_preferences(
             )
         ).scalar_one_or_none()
         if company is None:
-            company = Company(canonical_name=company_name, aliases=[], source_refs_json=[])
+            company = Company(
+                canonical_name=company_name,
+                aliases=[],
+                source_refs_json=[],
+                **company_name_fields(company_name),
+            )
             db.add(company)
             await db.flush()
         db.add(

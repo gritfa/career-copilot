@@ -11,7 +11,8 @@ import uuid
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from sqlalchemy import delete, select
+from pydantic import TypeAdapter
+from sqlalchemy import ColumnElement, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit
@@ -29,9 +30,12 @@ from app.db.models import (
     UserFeedback,
 )
 from app.db.session import get_db
+from app.jobs.constants import DATA_ORIGIN_USER_IMPORT
 from app.matching.schemas import (
     FeedbackOut,
+    FeedbackReasonCode,
     FeedbackRequest,
+    FeedbackSentiment,
     HardConditionItemOut,
     MatchComponentOut,
     RecommendationDetailOut,
@@ -45,6 +49,12 @@ from app.matching.service import apply_feedback_delta
 router = APIRouter(tags=["recommendations"])
 
 _NOT_FOUND = AppError(code="NOT_FOUND", message="资源不存在", status_code=404)
+
+# DB 存 str（有 CHECK 约束），出参 Literal：运行时真校验，非静态断言
+_SENTIMENT_ADAPTER: TypeAdapter[FeedbackSentiment] = TypeAdapter(FeedbackSentiment)
+_REASON_ADAPTER: TypeAdapter[FeedbackReasonCode | None] = TypeAdapter(
+    FeedbackReasonCode | None
+)
 
 
 def _encode_cursor(rec: Recommendation) -> str:
@@ -63,6 +73,17 @@ def _decode_cursor(cursor: str) -> tuple[date, int, uuid.UUID]:
         ) from exc
 
 
+def _job_visible_to(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """岗位对该用户可见：global，或 private 且属主本人（与 /jobs 系列同一规则）。
+
+    岗位转私有/属主注销后，历史推荐不得继续暴露岗位内容（P-1 第 2 项）。
+    """
+    return or_(
+        CanonicalJob.visibility == "global",
+        CanonicalJob.owner_user_id == user_id,
+    )
+
+
 async def _get_owned_recommendation(
     db: AsyncSession, rec_id: uuid.UUID, ctx: AuthContext
 ) -> tuple[Recommendation, SearchPlan]:
@@ -70,11 +91,13 @@ async def _get_owned_recommendation(
         await db.execute(
             select(Recommendation, SearchPlan)
             .join(SearchPlan, SearchPlan.id == Recommendation.search_plan_id)
+            .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
             .where(Recommendation.id == rec_id)
+            .where(_job_visible_to(ctx.user.id))
         )
     ).first()
     if row is None or row[1].user_id != ctx.user.id:
-        raise _NOT_FOUND  # 越权与不存在同样返回 404，不泄露存在性
+        raise _NOT_FOUND  # 越权/岗位不可见与不存在同样返回 404，不泄露存在性
     return row[0], row[1]
 
 
@@ -107,7 +130,9 @@ async def list_recommendations(
     stmt = (
         select(Recommendation, SearchPlan)
         .join(SearchPlan, SearchPlan.id == Recommendation.search_plan_id)
+        .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
         .where(SearchPlan.user_id == ctx.user.id)
+        .where(_job_visible_to(ctx.user.id))
         .order_by(
             Recommendation.recommended_on.desc(),
             Recommendation.rank.asc(),
@@ -164,12 +189,17 @@ async def list_recommendations(
                 job_title=(posting.title_raw if posting else (job.title_normalized if job else "")),
                 company_name=company_name,
                 city_code=posting.city_code if posting else None,
+                data_origin=(job.data_origin if job else DATA_ORIGIN_USER_IMPORT),
                 score=rec.score_total,
                 grade=rec.grade,
                 hard_filter_status=rec.hard_filter_status,
                 rank=rec.rank,
                 recommended_on=rec.recommended_on,
-                feedback_sentiment=feedback.sentiment if feedback else None,
+                feedback_sentiment=(
+                    _SENTIMENT_ADAPTER.validate_python(feedback.sentiment)
+                    if feedback
+                    else None
+                ),
             )
         )
     next_cursor = _encode_cursor(rows[-1][0]) if has_more and rows else None
@@ -211,11 +241,18 @@ async def get_recommendation(
         )
         for s in (posting.outsourcing_signals if posting else []) or []
     ]
+    # 纵深防御：他人导入的 posting（个人来源记录）绝不出现在来源链接里
     link_rows = (
         await db.execute(
             select(JobPosting, JobSource)
             .join(JobSource, JobSource.id == JobPosting.job_source_id)
-            .where(JobPosting.canonical_job_id == rec.canonical_job_id)
+            .where(
+                JobPosting.canonical_job_id == rec.canonical_job_id,
+                or_(
+                    JobPosting.imported_by_user_id.is_(None),
+                    JobPosting.imported_by_user_id == ctx.user.id,
+                ),
+            )
             .order_by(JobPosting.first_seen_at)
         )
     ).all()
@@ -236,6 +273,7 @@ async def get_recommendation(
         job_title=(posting.title_raw if posting else (job.title_normalized if job else "")),
         company_name=company_name,
         city_code=posting.city_code if posting else None,
+        data_origin=(job.data_origin if job else DATA_ORIGIN_USER_IMPORT),
         description_text=posting.description_text if posting else None,
         salary_raw=posting.salary_raw if posting else None,
         score=rec.score_total,
@@ -262,8 +300,8 @@ async def get_recommendation(
         feedback=(
             FeedbackOut(
                 recommendation_id=rec.id,
-                sentiment=feedback.sentiment,
-                reason_code=feedback.reason_code,
+                sentiment=_SENTIMENT_ADAPTER.validate_python(feedback.sentiment),
+                reason_code=_REASON_ADAPTER.validate_python(feedback.reason_code),
                 note=feedback.optional_note,
                 created_at=feedback.created_at,
             )
@@ -341,8 +379,8 @@ async def submit_feedback(
     await db.commit()
     return FeedbackOut(
         recommendation_id=rec.id,
-        sentiment=existing.sentiment,
-        reason_code=existing.reason_code,
+        sentiment=_SENTIMENT_ADAPTER.validate_python(existing.sentiment),
+        reason_code=_REASON_ADAPTER.validate_python(existing.reason_code),
         note=existing.optional_note,
         created_at=existing.created_at,
     )

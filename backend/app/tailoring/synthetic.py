@@ -11,7 +11,7 @@
 """
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from app.integrations.llm_gateway import LLMRawResponse, LLMRequest
 from app.tailoring.prompts import extract_tailor_input
@@ -23,7 +23,9 @@ from app.tailoring.schemas import (
     TailoredResumeDraft,
 )
 
-_SECTION_ORDER = ("skills", "work_experience", "projects", "education")
+_SECTION_ORDER: tuple[
+    Literal["skills", "work_experience", "projects", "education"], ...
+] = ("skills", "work_experience", "projects", "education")
 _SECTION_TITLES = {
     "skills": "专业技能",
     "work_experience": "工作经历",

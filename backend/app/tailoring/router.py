@@ -18,7 +18,8 @@ from datetime import UTC, datetime
 from datetime import time as dtime
 
 from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy import func, select
+from pydantic import TypeAdapter
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import AuthContext, require_active_user, require_user
@@ -26,6 +27,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.quotas import effective_limit
 from app.db.models import (
+    CanonicalJob,
     ProfileFact,
     Recommendation,
     ResumeExport,
@@ -38,13 +40,18 @@ from app.resumes.parser import PROTECTED_FACT_TYPES
 from app.tailoring.prompts import TAILOR_PROMPT_VERSION
 from app.tailoring.schemas import (
     TEMPLATE_ID,
+    ExportFormat,
     ResumeChange,
     ResumeContent,
+    ResumeCreatedBy,
     ResumeExportCreateIn,
     ResumeExportOut,
+    ResumeExportStatus,
+    ResumeVersionKind,
     ResumeVersionListOut,
     ResumeVersionOut,
     ResumeVersionPatchIn,
+    ResumeVersionStatus,
 )
 from app.tailoring.synthetic import get_tailor_adapter
 from app.tailoring.tasks import export_resume_task, generate_resume_draft_task
@@ -60,6 +67,13 @@ _MEDIA_TYPES = {
     "pdf": "application/pdf",
 }
 
+# DB 存 str（有 CHECK 约束），出参 Literal：运行时真校验，非静态断言
+_VERSION_KIND_ADAPTER: TypeAdapter[ResumeVersionKind] = TypeAdapter(ResumeVersionKind)
+_VERSION_STATUS_ADAPTER: TypeAdapter[ResumeVersionStatus] = TypeAdapter(ResumeVersionStatus)
+_CREATED_BY_ADAPTER: TypeAdapter[ResumeCreatedBy] = TypeAdapter(ResumeCreatedBy)
+_EXPORT_FORMAT_ADAPTER: TypeAdapter[ExportFormat] = TypeAdapter(ExportFormat)
+_EXPORT_STATUS_ADAPTER: TypeAdapter[ResumeExportStatus] = TypeAdapter(ResumeExportStatus)
+
 
 def _version_out(version: ResumeVersion) -> ResumeVersionOut:
     content = None
@@ -69,13 +83,13 @@ def _version_out(version: ResumeVersion) -> ResumeVersionOut:
     provider = generator.get("provider")
     return ResumeVersionOut(
         id=version.id,
-        kind=version.kind,
+        kind=_VERSION_KIND_ADAPTER.validate_python(version.kind),
         recommendation_id=version.recommendation_id,
         canonical_job_id=version.canonical_job_id,
         parent_version_id=version.parent_version_id,
         template_id=version.template_id,
-        status=version.status,
-        created_by=version.created_by,
+        status=_VERSION_STATUS_ADAPTER.validate_python(version.status),
+        created_by=_CREATED_BY_ADAPTER.validate_python(version.created_by),
         provider=provider,
         model_id=generator.get("model_id"),
         # 合成/未经真实模型验证的产出如实标注（复用阶段 6 已验证供应商清单语义）
@@ -102,7 +116,16 @@ async def _get_owned_recommendation(
         await db.execute(
             select(Recommendation, SearchPlan)
             .join(SearchPlan, SearchPlan.id == Recommendation.search_plan_id)
+            .join(CanonicalJob, CanonicalJob.id == Recommendation.canonical_job_id)
             .where(Recommendation.id == rec_id)
+            # 岗位可见性与 /jobs、/recommendations 同一规则：
+            # 岗位转私有/属主注销后，不得再基于它生成定制简历
+            .where(
+                or_(
+                    CanonicalJob.visibility == "global",
+                    CanonicalJob.owner_user_id == ctx.user.id,
+                )
+            )
         )
     ).first()
     if row is None or row[1].user_id != ctx.user.id:
@@ -349,8 +372,8 @@ def _export_out(export: ResumeExport) -> ResumeExportOut:
     return ResumeExportOut(
         id=export.id,
         resume_version_id=export.resume_version_id,
-        format=export.format,
-        status=export.status,
+        format=_EXPORT_FORMAT_ADAPTER.validate_python(export.format),
+        status=_EXPORT_STATUS_ADAPTER.validate_python(export.status),
         error_code=export.error_code,
         size_bytes=export.size_bytes,
         file_sha256=export.file_sha256,

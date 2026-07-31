@@ -209,6 +209,64 @@ async def test_model_failure_marks_failed_and_base_results_survive(
     assert len(detail.json()["components"]) == 6
 
 
+async def test_repair_failure_still_bills_first_call_usage(db_factory, client, monkeypatch):
+    """PR#4 review 第 2 条（调用方记账路径）：首调成功 + Schema 错误 + 修复请求
+    网络失败 → run 失败为 MODEL_UNAVAILABLE，但第一次调用的 token 必须入账。"""
+    from app.integrations.llm_gateway import LLMError, LLMRawResponse, LLMRequest
+
+    class SchemaThenNetworkFailAdapter:
+        provider = "synthetic"
+        model_id = "synthetic-analysis@1"
+        configured = True
+
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, request: LLMRequest):
+            self.calls += 1
+            if self.calls == 1:
+                # 第一次成功返回（token 已实际消耗），但内容不符合报告 Schema
+                return LLMRawResponse(
+                    content='{"not": "std_analysis_v1"}', tokens_in=100, tokens_out=50
+                )
+            raise LLMError("network down during repair")
+
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    monkeypatch.setattr(
+        "app.integrations.llm_gateway.get_llm_adapter",
+        lambda: SchemaThenNetworkFailAdapter(),
+    )
+    _user, _plan, items = await setup_recommendations(
+        db_factory, client, "ana-repair-bill@cc-integration.dev"
+    )
+    body = (
+        await client.post(f"/api/v1/recommendations/{items[0]['id']}/deep-analysis")
+    ).json()
+    assert body["status"] == "failed"
+    assert body["error_code"] == "MODEL_UNAVAILABLE"
+
+    # 账本必须含第一次调用的真实用量（此前丢账）；run 行费用计数同步落库
+    from app.db.models import UsageLedger
+
+    async with db_factory() as db:
+        ledger = (
+            (
+                await db.execute(
+                    select(UsageLedger).where(
+                        UsageLedger.user_id == _user.id,
+                        UsageLedger.operation_type == "llm_analysis",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(ledger) == 1
+    assert ledger[0].tokens_in == 100 and ledger[0].tokens_out == 50
+    row = await get_run_row(db_factory, body["id"])
+    assert row.cost_tokens_in == 100 and row.cost_tokens_out == 50
+
+
 async def test_fabricated_fact_ids_blocked_by_validation(db_factory, client, monkeypatch):
     """模型虚构事实引用 → validating 阶段拦截，任务明确失败。"""
     from app.integrations.llm_gateway import LLMRawResponse, LLMRequest

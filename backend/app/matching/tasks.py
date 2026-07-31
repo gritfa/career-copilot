@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, date, datetime
 
 import structlog
-from sqlalchemy import create_engine, select
+from sqlalchemy import Engine, and_, create_engine, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
@@ -43,7 +43,7 @@ from app.matching.hard_filters import (
 )
 from app.matching.profile import build_user_profile
 from app.matching.recall import recall_top_k, upsert_job_vector, upsert_profile_vector
-from app.matching.scoring import compute_score
+from app.matching.scoring import ScoringResult, compute_score
 from app.matching.vector_text import (
     PREPROCESS_VERSION,
     build_job_vector_text,
@@ -54,7 +54,7 @@ from app.tasks.celery_app import celery_app
 logger = structlog.get_logger("app.matching.tasks")
 
 
-def _task_session() -> tuple[Session, object]:
+def _task_session() -> tuple[Session, Engine]:
     engine = create_engine(get_settings().sync_database_url, poolclass=NullPool)
     return Session(engine), engine
 
@@ -102,7 +102,7 @@ def generate_recommendations_task(self, plan_id: str, run_date: str | None = Non
             return {"status": f"skipped:{plan.status}"}
 
         # ---- 用户画像（只用已确认事实） ----
-        facts = (
+        facts = list(
             db.execute(
                 select(ProfileFact).where(
                     ProfileFact.user_id == plan.user_id, ProfileFact.status == "active"
@@ -144,8 +144,21 @@ def generate_recommendations_task(self, plan_id: str, run_date: str | None = Non
         )
 
         # ---- 候选池：active canonical jobs + 主 posting ----
-        jobs = (
-            db.execute(select(CanonicalJob).where(CanonicalJob.status == "active"))
+        # 可见性隔离（阶段 10 任务 B）：公开岗位 + 本人私有导入岗位；
+        # 他人私有岗位、无主私有岗位（owner=NULL）绝不进入候选池。
+        jobs = list(
+            db.execute(
+                select(CanonicalJob).where(
+                    CanonicalJob.status == "active",
+                    or_(
+                        CanonicalJob.visibility == "global",
+                        and_(
+                            CanonicalJob.visibility == "private",
+                            CanonicalJob.owner_user_id == plan.user_id,
+                        ),
+                    ),
+                )
+            )
             .scalars()
             .all()
         )
@@ -218,7 +231,7 @@ def generate_recommendations_task(self, plan_id: str, run_date: str | None = Non
         remaining_quota = max(0, settings.daily_recommendation_limit - len(today_count))
 
         # ---- 评分 ----
-        scored: list[tuple[int, uuid.UUID, object]] = []
+        scored: list[tuple[int, uuid.UUID, ScoringResult]] = []
         for job_id in scored_ids:
             if job_id in already:
                 continue
@@ -298,7 +311,7 @@ def generate_recommendations_task(self, plan_id: str, run_date: str | None = Non
         return stats
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 @celery_app.task(name="matching.generate_all_recommendations")
@@ -314,7 +327,7 @@ def generate_all_recommendations_task() -> dict[str, str]:
         ]
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
     results: dict[str, str] = {}
     eager = get_settings().celery_task_always_eager

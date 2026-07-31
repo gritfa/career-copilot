@@ -551,6 +551,15 @@ class Company(Base):
     )
     canonical_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     aliases: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    # 标准化键（阶段 10 任务 D）：normalized 高置信匹配键；core 仅生成低置信候选，
+    # core 相等绝不自动合并，只进 company_alias_reviews 人工审核。
+    name_normalized: Mapped[str | None] = mapped_column(String(255))
+    name_core: Mapped[str | None] = mapped_column(String(255))
+    name_rules_version: Mapped[str | None] = mapped_column(String(32))
+    # 人工审核判定并入后的重定向指针（行保留、可追溯，解析时跟随）
+    merged_into_company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL")
+    )
     official_domain: Mapped[str | None] = mapped_column(String(255))
     city_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String(12)))
     verification_status: Mapped[str] = mapped_column(
@@ -569,6 +578,58 @@ class Company(Base):
             "verification_status IN ('unverified', 'verified')",
             name="ck_companies_verification_status",
         ),
+        Index("ix_companies_name_normalized", "name_normalized"),
+        Index("ix_companies_name_core", "name_core"),
+    )
+
+
+class CompanyAliasReview(Base):
+    """公司低置信归一候选：core 键相同 / normalized 多义时进人工审核队列。
+
+    硬边界（阶段 10 任务 D）：绝不凭字符串相似自动合并公司；本表只记录候选证据，
+    approve/reject 由人工执行且留 decided_by / decided_at / 规则版本，全程可追溯。
+    """
+
+    __tablename__ = "company_alias_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    raw_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    core_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 新建（待并入方）公司
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    # 既有候选（可能的并入目标）公司
+    candidate_company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    match_rule: Mapped[str] = mapped_column(String(64), nullable=False)
+    rules_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[str | None] = mapped_column(String(128))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="ck_company_alias_reviews_status",
+        ),
+        CheckConstraint(
+            "company_id <> candidate_company_id",
+            name="ck_company_alias_reviews_distinct_companies",
+        ),
+        UniqueConstraint(
+            "company_id", "candidate_company_id", name="uq_company_alias_reviews_pair"
+        ),
+        Index("ix_company_alias_reviews_status", "status"),
     )
 
 
@@ -746,7 +807,14 @@ class JobSnapshot(Base):
 
 
 class CanonicalJob(Base):
-    """去重合并后的岗位主体；企业官网优先主来源，保留全部来源链接。"""
+    """去重合并后的岗位主体；企业官网优先主来源，保留全部来源链接。
+
+    可见性模型（阶段 10 任务 B）：
+    - ``visibility='global'``：连接器公开岗位，进入所有用户的候选池。
+    - ``visibility='private'``：用户导入岗位，只有 ``owner_user_id`` 本人可见/可被推荐；
+      owner 为 NULL 的 private 岗位（归属无法推断/已注销）不参与任何推荐。
+    - 个人岗位只有经过明确审核发布（后续流程）才可转为 global。
+    """
 
     __tablename__ = "canonical_jobs"
 
@@ -757,6 +825,16 @@ class CanonicalJob(Base):
     role_family: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     company_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL")
+    )
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="global")
+    # 私有岗位归属者；用户行删除时 SET NULL（private+NULL owner 不参与任何推荐，兜底）
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # 数据来源标注（阶段 11 P1）：connector / user_import / synthetic_seed；
+    # synthetic_seed 的岗位前端必须在列表卡片与详情页展示「合成示例」徽标
+    data_origin: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="user_import", server_default="user_import"
     )
     city_code: Mapped[str | None] = mapped_column(String(12))
     # 主展示来源 posting；与 job_postings 循环引用，不建 FK
@@ -784,7 +862,16 @@ class CanonicalJob(Base):
             "status IN ('active', 'inactive', 'unknown')",
             name="ck_canonical_jobs_status",
         ),
+        CheckConstraint(
+            "visibility IN ('global', 'private')",
+            name="ck_canonical_jobs_visibility",
+        ),
+        CheckConstraint(
+            "data_origin IN ('connector', 'user_import', 'synthetic_seed')",
+            name="ck_canonical_jobs_data_origin",
+        ),
         Index("ix_canonical_jobs_company_city", "company_id", "city_code"),
+        Index("ix_canonical_jobs_visibility_owner", "visibility", "owner_user_id"),
     )
 
 
@@ -1074,6 +1161,12 @@ class JobVector(Base):
             "model_id",
             "preprocess_version",
             name="uq_job_vectors_job_model_version",
+        ),
+        Index(
+            "ix_job_vectors_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )
 

@@ -74,6 +74,8 @@ TABLES = (
     "job_snapshots",
     "source_runs",
     "job_sources",
+    # 阶段 10 任务 D：公司归一待审
+    "company_alias_reviews",
     "companies",
     "audit_events",
     "consents",

@@ -10,13 +10,24 @@
 
 import hashlib
 import json
+from collections.abc import Sequence
 from typing import Any
 
+from app.agents.schemas import StandardAnalysisReport
+from app.db.models import MatchComponent, ProfileFact
 from app.integrations.llm_gateway import LLMRequest
 from app.resumes.parser import PROTECTED_FACT_TYPES
 
-PROMPT_VERSION = "std_prompt_v1"
+# v2（阶段 11 P0）：prompt 内嵌输出 JSON Schema。v1 只列顶层字段名，合成
+# Adapter 从不读 prompt 所以一直没暴露；真实 DeepSeek 实跑立即产出
+# resume_suggestions 字符串数组（应为对象数组）→ SCHEMA_INVALID。
+PROMPT_VERSION = "std_prompt_v2"
 INPUT_VERSION = "std_input_v1"
+
+# 目标输出 Schema（由 pydantic 模型确定性生成，随模型定义自动同步）
+_OUTPUT_SCHEMA_JSON = json.dumps(
+    StandardAnalysisReport.model_json_schema(), ensure_ascii=False, sort_keys=True
+)
 
 # 事实 value_json 中即使意外出现联系方式类键也不进 prompt（防御性）
 _DROPPED_VALUE_KEYS = frozenset({"phone", "mobile", "email", "wechat", "qq", "address"})
@@ -44,11 +55,11 @@ def _filtered_fact_value(value: dict[str, Any]) -> dict[str, Any]:
 
 def build_analysis_input(
     *,
-    facts: list,
+    facts: Sequence[ProfileFact],
     plan,
     posting,
     recommendation,
-    components: list,
+    components: Sequence[MatchComponent],
 ) -> dict[str, Any]:
     """构造分析输入文档（确定性：字段排序稳定）。
 
@@ -116,8 +127,10 @@ def build_analysis_request(input_doc: dict[str, Any]) -> LLMRequest:
     """输入文档 → Gateway 请求（提示词正文绝不入日志）。"""
     payload = json.dumps(input_doc, ensure_ascii=False, sort_keys=True)
     user = (
-        "请基于以下输入文档产出标准分析报告 JSON"
-        "（字段：schema_version/overall_summary/strengths/gaps/risks/resume_suggestions）。\n"
+        "请基于以下输入文档产出标准分析报告 JSON。\n"
+        "输出必须是单个 JSON 对象，严格符合以下 JSON Schema：不得增删字段、"
+        "不得改变嵌套结构，数组元素必须是 Schema 定义的对象而不是字符串。\n"
+        f"<OUTPUT_SCHEMA>\n{_OUTPUT_SCHEMA_JSON}\n</OUTPUT_SCHEMA>\n"
         f"{INPUT_START}\n{payload}\n{INPUT_END}"
     )
     return LLMRequest(system=_SYSTEM_PROMPT, user=user, schema_name="std_analysis_v1")

@@ -17,6 +17,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.companies.resolver import resolve_company
 from app.db.models import Company, JobPosting, JobSnapshot, JobSource
 from app.integrations.storage import get_storage
 from app.jobs.adapters.base import RawJobSnapshot
@@ -52,18 +53,10 @@ class IngestResult:
 
 
 def get_or_create_company(db: Session, name: str | None) -> Company | None:
-    """按规范名 get-or-create 公司（名称非正文/非个人信息，可入库）。"""
-    if not name or not name.strip():
-        return None
-    canonical = name.strip()
-    company = db.execute(
-        select(Company).where(Company.canonical_name == canonical)
-    ).scalar_one_or_none()
-    if company is None:
-        company = Company(id=uuid.uuid4(), canonical_name=canonical, aliases=[])
-        db.add(company)
-        db.flush()
-    return company
+    """公司归一（阶段 10 任务 D）：精确/别名配置/标准化命中归一到既有公司；
+    仅 core 相似的低置信候选新建独立公司并进人工待审，绝不自动合并；
+    垃圾/占位名返回 None（名称非正文/非个人信息，可入库）。"""
+    return resolve_company(db, name).company
 
 
 def create_snapshot(db: Session, source: JobSource, raw: RawJobSnapshot) -> JobSnapshot:
@@ -233,8 +226,13 @@ def build_import_text_raw(
     employment: str | None,
     description: str,
     url: str | None,
+    imported_by_user_id: uuid.UUID,
 ) -> RawJobSnapshot:
-    """把用户粘贴的岗位正文打包成与连接器一致的原始载荷（同一管道处理）。"""
+    """把用户粘贴的岗位正文打包成与连接器一致的原始载荷（同一管道处理）。
+
+    source_job_id 按导入者隔离（阶段 10 任务 B）：不同用户粘贴相同正文必须得到
+    各自独立的 private posting/canonical，绝不复用他人的导入记录。
+    """
     from app.jobs.adapters.base import SourceJobRef
     from app.jobs.constants import SOURCE_KEY_USER_IMPORT
 
@@ -253,7 +251,7 @@ def build_import_text_raw(
     digest = hashlib.sha256(content).hexdigest()
     ref = SourceJobRef(
         source_key=SOURCE_KEY_USER_IMPORT,
-        source_job_id=f"text:{digest}",
+        source_job_id=f"text:{imported_by_user_id}:{digest}",
         url=url or "",
     )
     return RawJobSnapshot(
@@ -272,12 +270,13 @@ def import_url_reference(
     imported_by_user_id: uuid.UUID,
     title: str | None = None,
 ) -> tuple[JobPosting, bool]:
-    """URL 导入：只存引用绝不抓取（docs/06 硬边界 + ADR D1）。
+    """URL 导入：只存引用绝不抓取（docs/06 硬边界）。
 
-    返回 (posting, created)。同一 URL 重复导入幂等复用。
+    返回 (posting, created)。同一用户重复导入同一 URL 幂等复用；
+    不同用户导入同一 URL 各自独立（导入记录不跨用户共享）。
     """
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    source_job_id = f"url:{digest}"
+    source_job_id = f"url:{imported_by_user_id}:{digest}"
     existing = db.execute(
         select(JobPosting).where(
             JobPosting.job_source_id == source.id,

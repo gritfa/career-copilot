@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import redis as redis_sync
 import structlog
-from sqlalchemy import create_engine, select
+from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
@@ -44,7 +44,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _task_session() -> tuple[Session, object]:
+def _task_session() -> tuple[Session, Engine]:
     engine = create_engine(get_settings().sync_database_url, poolclass=NullPool)
     return Session(engine), engine
 
@@ -244,7 +244,7 @@ def sync_source_task(self, source_key: str, run_key: str | None = None) -> str:
         )
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 @celery_app.task(name="jobs.sync_all_sources")

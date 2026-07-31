@@ -1,0 +1,20 @@
+# 供给 Spike 硬门槛（ADR-002 配套）
+# 状态：pending_owner_confirmation —— 全部数值为架构师草案，负责人未确认前不作为最终门槛；
+# 报告同时输出原始数据，负责人可据此调整数值，绝不通过放宽数据口径来"达标"。
+version: 1
+status: pending_owner_confirmation
+thresholds:
+  # 至少连续观察 7 个自然日，才允许给出 supply_gate 结论（否则一律 not_verified）
+  minimum_observation_days: 7
+  # 每个入选"城市×方向"格子至少 3 个独立来源
+  minimum_sources_per_selected_cell: 3
+  # 每个入选格子的在架岗位库存下限
+  minimum_active_jobs_per_selected_cell: 50
+  # 每个入选格子的"每日新增岗位"中位数下限
+  minimum_median_daily_new_jobs_per_selected_cell: 3
+  # 解析成功率下限（原始发现 → 结构化成功）
+  minimum_parse_success_rate: 0.90
+  # 发布时间缺失率上限
+  maximum_unknown_publish_time_rate: 0.30
+  # 单一来源占比上限（来源集中度风险）
+  maximum_single_source_share: 0.60

@@ -520,6 +520,16 @@ export interface RecommendationListItem {
   salary_text?: string;
   source?: string;
   source_name?: string;
+  /** 岗位数据来源：connector / user_import / synthetic_seed（阶段 11 P1） */
+  data_origin?: string;
+}
+
+/**
+ * 是否为合成种子岗位（阶段 11 P1 硬要求）：
+ * data_origin === 'synthetic_seed' 时列表卡片与详情页必须展示「合成示例」徽标。
+ */
+export function isSyntheticSeed(rec: RecommendationListItem): boolean {
+  return rec.data_origin === "synthetic_seed";
 }
 
 /* ---------------- 推荐详情、反馈与能力状态（docs/04 第 6 节、docs/07） ---------------- */

@@ -9,11 +9,12 @@
 
 import asyncio
 import uuid
+from typing import Literal
 
 import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import create_engine, select
+from sqlalchemy import Engine, create_engine, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
@@ -27,6 +28,7 @@ from app.core.redis import get_redis_dep
 from app.core.security import hash_ip
 from app.db.models import CanonicalJob, JobPosting, JobSource
 from app.db.session import get_db
+from app.jobs.adapters.base import ValidityStatus
 from app.jobs.constants import SOURCE_KEY_USER_IMPORT
 from app.jobs.pipeline import (
     IngestResult,
@@ -50,7 +52,7 @@ router = APIRouter(tags=["jobs"])
 _VALIDITY_CHECK_LIMIT_PER_HOUR = 10
 
 
-def _sync_session() -> tuple[Session, object]:
+def _sync_session() -> tuple[Session, Engine]:
     engine = create_engine(get_settings().sync_database_url, poolclass=NullPool)
     return Session(engine), engine
 
@@ -73,13 +75,14 @@ def _import_text_sync(payload: JobImportRequest, user_id: uuid.UUID) -> IngestRe
             employment=payload.employment_text,
             description=payload.description_text or "",
             url=str(payload.url) if payload.url else None,
+            imported_by_user_id=user_id,
         )
         result = ingest_raw(db, source, raw, imported_by_user_id=user_id)
         db.commit()
         return result
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 def _import_url_sync(url: str, title: str | None, user_id: uuid.UUID) -> IngestResult:
@@ -100,7 +103,7 @@ def _import_url_sync(url: str, title: str | None, user_id: uuid.UUID) -> IngestR
         )
     finally:
         db.close()
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 @router.post("/jobs/import", response_model=JobImportOut, status_code=status.HTTP_201_CREATED)
@@ -111,6 +114,7 @@ async def import_job(
     db: AsyncSession = Depends(get_db),
 ) -> JobImportOut:
     """用户导入岗位：正文走完整管道；URL 只存引用不抓取。"""
+    imported_via: Literal["text", "url"]
     if payload.description_text is not None:
         imported_via = "text"
         result = await asyncio.to_thread(_import_text_sync, payload, ctx.user.id)
@@ -141,11 +145,16 @@ async def import_job(
     )
 
 
-async def _get_canonical(db: AsyncSession, job_id: uuid.UUID) -> CanonicalJob:
+async def _get_canonical(
+    db: AsyncSession, job_id: uuid.UUID, ctx: AuthContext
+) -> CanonicalJob:
+    """读取岗位并执行可见性规则：他人私有岗位与不存在同样 404（不泄露存在性）。"""
     canonical = (
         await db.execute(select(CanonicalJob).where(CanonicalJob.id == job_id))
     ).scalar_one_or_none()
-    if canonical is None:
+    if canonical is None or (
+        canonical.visibility == "private" and canonical.owner_user_id != ctx.user.id
+    ):
         raise AppError(code="NOT_FOUND", message="资源不存在", status_code=404)
     return canonical
 
@@ -156,13 +165,22 @@ async def get_job_sources(
     ctx: AuthContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobSourcesOut:
-    """去重后保留的全部来源链接（企业官网为主来源，其余不删除）。"""
-    canonical = await _get_canonical(db, job_id)
+    """去重后保留的全部来源链接（企业官网为主来源，其余不删除）。
+
+    纵深防御：即使 canonical 可见，他人导入的 posting（个人来源记录）也绝不返回。
+    """
+    canonical = await _get_canonical(db, job_id, ctx)
     rows = (
         await db.execute(
             select(JobPosting, JobSource)
             .join(JobSource, JobSource.id == JobPosting.job_source_id)
-            .where(JobPosting.canonical_job_id == canonical.id)
+            .where(
+                JobPosting.canonical_job_id == canonical.id,
+                or_(
+                    JobPosting.imported_by_user_id.is_(None),
+                    JobPosting.imported_by_user_id == ctx.user.id,
+                ),
+            )
             .order_by(JobPosting.first_seen_at)
         )
     ).all()
@@ -200,7 +218,7 @@ async def check_job_validity(
         limit=_VALIDITY_CHECK_LIMIT_PER_HOUR,
         window_seconds=3600,
     )
-    canonical = await _get_canonical(db, job_id)
+    canonical = await _get_canonical(db, job_id, ctx)
 
     posting: JobPosting | None = None
     if canonical.primary_posting_id is not None:
@@ -228,6 +246,8 @@ async def check_job_validity(
 
     from datetime import UTC, datetime
 
+    result_status: ValidityStatus
+    reason: str | None
     if adapter is None or not posting.source_job_id:
         # 用户导入/无自动访问方式：无法自动核实 → unknown（不伪造结论）
         result_status, checked_at, reason = (
