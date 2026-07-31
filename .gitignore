@@ -42,3 +42,8 @@ yarn-error.log*
 *.tmp
 tmp/
 .cache/
+
+# ---------- 一键 Demo（demo.sh / demo.ps1）运行时产物 ----------
+.demo/
+# Celery beat 本地调度状态文件（手动起 beat 时的默认落点）
+celerybeat-schedule*

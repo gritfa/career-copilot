@@ -22,6 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import CanonicalJob, JobPosting, JobSource
+from app.jobs.constants import (
+    DATA_ORIGIN_CONNECTOR,
+    DATA_ORIGIN_SYNTHETIC_SEED,
+    DATA_ORIGIN_USER_IMPORT,
+    SOURCE_KEY_SYNTHETIC_SEED,
+)
 
 logger = structlog.get_logger("app.jobs.dedupe")
 
@@ -83,6 +89,16 @@ def _source_type(db: Session, posting: JobPosting) -> str:
     return source.source_type if source else "user_import"
 
 
+def _data_origin(db: Session, posting: JobPosting) -> str:
+    """data_origin 推导（阶段 11 P1）：种子来源 > 用户导入 > 连接器。"""
+    source = db.get(JobSource, posting.job_source_id)
+    if source is not None and source.source_key == SOURCE_KEY_SYNTHETIC_SEED:
+        return DATA_ORIGIN_SYNTHETIC_SEED
+    if source is None or source.source_type == "user_import":
+        return DATA_ORIGIN_USER_IMPORT
+    return DATA_ORIGIN_CONNECTOR
+
+
 def _maybe_promote_primary(db: Session, canonical: CanonicalJob, posting: JobPosting) -> None:
     """企业官网优先作为主展示来源；其他来源仍全部保留。"""
     if _source_type(db, posting) != "company_site":
@@ -115,6 +131,7 @@ def _create_canonical(
         status="active",
         visibility=visibility,
         owner_user_id=owner_user_id,
+        data_origin=_data_origin(db, posting),
         first_seen_at=posting.first_seen_at,
     )
     db.add(canonical)

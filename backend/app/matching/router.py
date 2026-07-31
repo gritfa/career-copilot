@@ -30,6 +30,7 @@ from app.db.models import (
     UserFeedback,
 )
 from app.db.session import get_db
+from app.jobs.constants import DATA_ORIGIN_USER_IMPORT
 from app.matching.schemas import (
     FeedbackOut,
     FeedbackReasonCode,
@@ -188,6 +189,7 @@ async def list_recommendations(
                 job_title=(posting.title_raw if posting else (job.title_normalized if job else "")),
                 company_name=company_name,
                 city_code=posting.city_code if posting else None,
+                data_origin=(job.data_origin if job else DATA_ORIGIN_USER_IMPORT),
                 score=rec.score_total,
                 grade=rec.grade,
                 hard_filter_status=rec.hard_filter_status,
@@ -271,6 +273,7 @@ async def get_recommendation(
         job_title=(posting.title_raw if posting else (job.title_normalized if job else "")),
         company_name=company_name,
         city_code=posting.city_code if posting else None,
+        data_origin=(job.data_origin if job else DATA_ORIGIN_USER_IMPORT),
         description_text=posting.description_text if posting else None,
         salary_raw=posting.salary_raw if posting else None,
         score=rec.score_total,

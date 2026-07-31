@@ -36,7 +36,16 @@ _PRICE_PER_1M_TOKENS: dict[str, tuple[float, float]] = {
 
 
 class LLMError(Exception):
-    """LLM 调用失败（超时/网络/供应商错误），有限重试后向调用方抛出。"""
+    """LLM 调用失败（超时/网络/供应商错误），有限重试后向调用方抛出。
+
+    携带 ``usage``：失败发生前若已有成功的真实调用（如第一次调用成功但
+    Schema 错误、修复请求才失败），token 已实际消耗，异常必须带上累计用量，
+    调用方照常写 usage_ledger（PR#4 review：失败调用不许丢账）。
+    """
+
+    def __init__(self, message: str, usage: "LLMUsage | None" = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class LLMNotConfiguredError(LLMError):
@@ -48,7 +57,19 @@ class LLMAuthorizationError(LLMError):
 
 
 class LLMSchemaError(LLMError):
-    """结构化输出经一次修复后仍不符合 Schema（失败不得伪装完成）。"""
+    """结构化输出经一次修复后仍不符合 Schema（失败不得伪装完成）。
+
+    携带 ``usage``：Schema 失败前的真实调用已实际消耗供应商 token，
+    调用方必须照常写 usage_ledger（P0 实跑暴露：失败 run 的费用曾丢账）。
+    """
+
+
+class LLMProviderRejectedError(LLMError):
+    """供应商明确拒绝请求（4xx，如无效 key 401 / 无权 403），不可重试。
+
+    P0 失败路径验证要求：无效 key 必须干净地立即失败（不重放浪费额度、
+    不静默降级合成、错误信息不含 key/请求体）。429 限流除外（可重试）。
+    """
 
 
 class LLMModelNotAllowedError(LLMError):
@@ -155,6 +176,15 @@ class DeepSeekAdapter:
             )
             response.raise_for_status()
             payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            # 4xx（429 除外）= 供应商明确拒绝（无效 key/无权/参数错），重试无意义；
+            # 错误信息只含状态码，不含请求体/响应体/key
+            if 400 <= status < 500 and status != 429:
+                raise LLMProviderRejectedError(
+                    f"deepseek rejected request: HTTP {status}"
+                ) from exc
+            raise LLMError(f"deepseek call failed: HTTP {status}") from exc
         except httpx.HTTPError as exc:
             # 只记异常类型，不把请求体/响应体写日志（可能含正文）
             raise LLMError(f"deepseek call failed: {type(exc).__name__}") from exc
@@ -169,6 +199,26 @@ class DeepSeekAdapter:
             tokens_out=int(usage.get("completion_tokens", 0)),
             provider_request_id=payload.get("id"),
         )
+
+    async def probe_runtime(self) -> bool:
+        """运行可用性轻量探测（capabilities 三态之「运行可用」）。
+
+        GET /models：零 token 费用，验证 key 当下有效且服务可达。
+        任何失败（网络/4xx/5xx）→ False，绝不抛异常、绝不记录响应正文。
+        异步实现（httpx.AsyncClient）：/health/capabilities 在事件循环内调用，
+        同步阻塞版最坏会卡住整个事件循环 10s（PR#4 review 第 3 条）。
+        """
+        if not self.configured:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=min(self._timeout, 10.0)) as client:
+                response = await client.get(
+                    f"{self._base_url}/models",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                )
+        except httpx.HTTPError:
+            return False
+        return response.status_code == 200
 
 
 # ---------------- Gateway ----------------
@@ -233,6 +283,19 @@ class ModelGateway:
             tokens_out += raw.tokens_out
             return raw
 
+        def _accumulated_usage(*, repaired: bool) -> LLMUsage:
+            return LLMUsage(
+                provider=self.adapter.provider,
+                model_id=self.adapter.model_id,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                amount_estimated=_estimate_amount(
+                    self.adapter.provider, self.adapter.model_id, tokens_in, tokens_out
+                ),
+                attempts=attempts,
+                repaired=repaired,
+            )
+
         raw = _call(request)
         parsed, error_note = self._try_validate(raw.content, output_model)
         repaired = False
@@ -250,7 +313,15 @@ class ModelGateway:
                 schema_name=request.schema_name,
                 max_output_tokens=request.max_output_tokens,
             )
-            raw = _call(repair_request)
+            try:
+                raw = _call(repair_request)
+            except LLMError as exc:
+                # PR#4 review 第 2 条：第一次调用成功（token 已实际消耗）但 Schema
+                # 错误，修复请求本身失败（网络/401/5xx）时，第一次的用量曾经丢账。
+                # 该分支同样携带累计用量，调用方照常写 usage_ledger。
+                if exc.usage is None:
+                    exc.usage = _accumulated_usage(repaired=True)
+                raise
             parsed, error_note = self._try_validate(raw.content, output_model)
             if parsed is None:
                 logger.warning(
@@ -261,20 +332,11 @@ class ModelGateway:
                     error_note=error_note,
                 )
                 raise LLMSchemaError(
-                    f"output failed schema {request.schema_name} after one repair"
+                    f"output failed schema {request.schema_name} after one repair",
+                    usage=_accumulated_usage(repaired=True),
                 )
 
-        usage = LLMUsage(
-            provider=self.adapter.provider,
-            model_id=self.adapter.model_id,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            amount_estimated=_estimate_amount(
-                self.adapter.provider, self.adapter.model_id, tokens_in, tokens_out
-            ),
-            attempts=attempts,
-            repaired=repaired,
-        )
+        usage = _accumulated_usage(repaired=repaired)
         # 结构化日志：只含计数/模型/Schema 名，绝不含提示词或响应正文
         logger.info(
             "llm_completed",
@@ -314,8 +376,12 @@ class ModelGateway:
         for attempt in range(self._max_retries + 1):
             try:
                 return self.adapter.complete(request)
-            except (LLMNotConfiguredError, LLMAuthorizationError):
-                raise  # 不可重试
+            except (
+                LLMNotConfiguredError,
+                LLMAuthorizationError,
+                LLMProviderRejectedError,
+            ):
+                raise  # 不可重试（未配置/未授权/供应商明确拒绝）
             except LLMError as exc:
                 last_error = exc
                 logger.warning(

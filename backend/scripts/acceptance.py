@@ -10,7 +10,9 @@
 
 证据边界（如实声明，不虚标）：
 - 本脚本验证的是「本地端到端流程」（docs/09 第 1 节层级 4）；
-- LLM/Embedding 为确定性合成 Adapter（provider=synthetic），真实模型效果 not_verified；
+- LLM：有 DEEPSEEK_API_KEY 时走真实 DeepSeek（分析/定制步骤如实标注
+  provider=deepseek/verified=true，消耗真实 token）；无 key 时为确定性合成
+  Adapter（provider=synthetic/verified=false）。Embedding 始终为确定性合成实现；
 - 未起独立 uvicorn/celery worker 进程；进程级部署拓扑另由 `make dev` 手册覆盖。
 
 Gate 规则：任何步骤断言失败 → 非零退出；步骤输出只含 ID/计数/状态，不打印简历正文。
@@ -143,6 +145,15 @@ def step_cli_invite(ctx) -> str:
 # ---------------- 用户旅程（异步，httpx ASGI） ----------------
 
 
+# 模型能力三态契约（与 app/api/health.py 及 tests/test_health.py 的契约测试一致）
+MODEL_CAPABILITY_KEYS = ("deepseek_generation", "qwen_fallback", "aliyun_embedding")
+MODEL_REQUIRED_FIELDS = {
+    "status", "configured", "runtime", "runtime_checked_at", "active_adapter", "last_verified",
+}
+MODEL_STATUS_DOMAIN = {"not_configured", "configured", "available", "unavailable"}
+MODEL_RUNTIME_DOMAIN = {"not_probed", "available", "unavailable"}
+
+
 async def step_health(ctx) -> str:
     c = ctx.client
     live = await c.get("/health/live")
@@ -152,10 +163,36 @@ async def step_health(ctx) -> str:
     checks = ready.json()["checks"]
     check(all(item["status"] == "ok" for item in checks.values()), f"ready 检查项异常: {checks}")
     caps = (await c.get("/health/capabilities")).json()["capabilities"]
-    # 诚实性 Gate：未真实验证的能力必须仍标 not_verified，不得虚标 ready
-    for key in ("deepseek_generation", "qwen_fallback", "aliyun_embedding"):
-        check(caps.get(key) == "not_verified", f"能力 {key} 被虚标为 {caps.get(key)}")
-    return f"live/ready 通过；capabilities {len(caps)} 项，模型类能力均为 not_verified"
+    # 诚实性 Gate（三态对象版，PR#4 review 第 1 条）：模型能力是三态对象，
+    # 校验结构齐全 + 取值域合法 + status 严格由 configured/runtime 推导
+    # （历史验证证据绝不升级当前态）。无 key 环境 not_configured 与有 key 环境
+    # available 都是合法真实状态；只有结构不合法或虚标（如无 key 却报可用）才失败。
+    statuses = {}
+    for key in MODEL_CAPABILITY_KEYS:
+        entry = caps.get(key)
+        check(isinstance(entry, dict), f"能力 {key} 应为三态对象，实际: {entry!r}")
+        missing = MODEL_REQUIRED_FIELDS - set(entry)
+        check(not missing, f"能力 {key} 三态对象缺字段: {sorted(missing)}")
+        check(isinstance(entry["configured"], bool),
+              f"能力 {key} configured 应为布尔: {entry['configured']!r}")
+        check(entry["status"] in MODEL_STATUS_DOMAIN,
+              f"能力 {key} status 取值非法: {entry['status']!r}")
+        check(entry["runtime"] in MODEL_RUNTIME_DOMAIN,
+              f"能力 {key} runtime 取值非法: {entry['runtime']!r}")
+        if not entry["configured"]:
+            check(entry["runtime"] == "not_probed",
+                  f"能力 {key} 无 key 却报运行探测结果 {entry['runtime']}（虚标）")
+        expected_status = (
+            "not_configured" if not entry["configured"]
+            else {"available": "available", "unavailable": "unavailable"}.get(
+                entry["runtime"], "configured")
+        )
+        check(entry["status"] == expected_status,
+              f"能力 {key} status={entry['status']} 与 configured/runtime 推导不符"
+              f"（应为 {expected_status}；历史证据不得升级当前态）")
+        statuses[key] = entry["status"]
+    summary = ", ".join(f"{k}={v}" for k, v in statuses.items())
+    return f"live/ready 通过；capabilities {len(caps)} 项；模型三态如实：{summary}"
 
 
 async def step_signup_login(ctx) -> str:
@@ -205,12 +242,15 @@ async def step_consent(ctx) -> str:
     check(notices.status_code == 200, f"授权告知获取失败: {notices.text}")
     version = notices.json()["providers"]["deepseek"]["notice_version"]
     check(notices.json()["providers"]["deepseek"]["default_checked"] is False, "授权默认勾选违规")
+    # 深度分析/定制简历发送的是结构化已确认事实 → profile_fields 范围
+    # （provider+scope 精确匹配，docs/08 第 3 节；full_resume 原文不在该流程中发送。
+    # 有 key 环境走真实 deepseek 时无此授权会 CONSENT_REQUIRED）
     grant = await c.post(
         "/api/v1/consents",
-        json={"provider": "deepseek", "scope": "full_resume", "notice_version": version},
+        json={"provider": "deepseek", "scope": "profile_fields", "notice_version": version},
     )
     check(grant.status_code == 201, f"授权失败: {grant.text}")
-    return f"deepseek full_resume 授权成功（notice v{version}，默认不勾选已验证）"
+    return f"deepseek profile_fields 授权成功（notice v{version}，默认不勾选已验证）"
 
 
 async def step_upload_parse(ctx) -> str:
@@ -359,14 +399,20 @@ async def step_deep_analysis(ctx) -> str:
     check(resp.status_code == 202, f"触发分析失败: {resp.text}")
     body = resp.json()
     check(body["status"] == "completed", f"分析未完成: {body['status']}")
-    check(body["provider"] == "synthetic" and body["verified"] is False,
-          "合成分析结果未如实标注 not_verified")
+    # 诚实标注：无 key 环境走合成实现（verified=false），有 key 环境走真实
+    # deepseek（已经 docs/16 三链路验证 → verified=true）；标注必须与 provider 一致
+    check(body["provider"] in ("synthetic", "deepseek"),
+          f"未知分析 provider: {body['provider']}")
+    check(body["verified"] is (body["provider"] == "deepseek"),
+          f"verified 标注与 provider 不符: provider={body['provider']} "
+          f"verified={body['verified']}")
     run = (await c.get(f"/api/v1/agent-runs/{body['id']}")).json()
     check(run["status"] == "completed" and run["report"]["schema_version"] == "std_analysis_v1",
           "分析报告缺失或版本异常")
     check(bool(run["report"]["overall_summary"]), "分析报告缺少总述")
     return (
-        f"深度分析完成 run_id={body['id']}（provider=synthetic, verified=false 如实标注；"
+        f"深度分析完成 run_id={body['id']}（provider={body['provider']}, "
+        f"verified={str(body['verified']).lower()} 如实标注；"
         f"报告 schema={run['report']['schema_version']}）"
     )
 
@@ -377,7 +423,11 @@ async def step_tailor_resume(ctx) -> str:
     check(resp.status_code == 202, f"生成定制简历失败: {resp.text}")
     body = resp.json()
     check(body["status"] == "draft" and body["kind"] == "job_tailored", "草稿状态异常")
-    check(body["verified"] is False, "合成定制结果未标注 not_verified")
+    check(body["provider"] in ("synthetic", "deepseek"),
+          f"未知定制 provider: {body['provider']}")
+    check(body["verified"] is (body["provider"] == "deepseek"),
+          f"verified 标注与 provider 不符: provider={body['provider']} "
+          f"verified={body['verified']}")
     ctx.version_id = body["id"]
     items = [item for sec in body["content"]["sections"] for item in sec["items"]]
     check(len(items) >= 1, "定制简历内容为空")
@@ -520,7 +570,7 @@ ASYNC_STEPS = [
     ("用户正文导入岗位（标准化管道）", step_import_job),
     ("每日匹配任务生成推荐", step_run_matching),
     ("推荐列表 + 详情（硬条件/分项/证据）", step_recommendations),
-    ("触发深度分析（合成模型，如实 not_verified）", step_deep_analysis),
+    ("触发深度分析（provider/verified 如实标注）", step_deep_analysis),
     ("岗位定制简历草稿（100% 事实绑定）", step_tailor_resume),
     ("确认版本 → DOCX/PDF 导出下载", step_confirm_and_export),
     ("推荐反馈", step_feedback),
@@ -581,7 +631,8 @@ def main() -> int:
         return 1
     print("-" * 78)
     print(f"结果：全部 {len(RESULTS)} 步通过。本地端到端用户旅程验收 PASS。")
-    print("注意：LLM/Embedding 为合成 Adapter，真实模型效果 not_verified，"
+    print("注意：LLM 实际 provider 以「深度分析/定制简历」步骤输出为准"
+          "（有 key=deepseek / 无 key=synthetic）；Embedding 为合成实现，"
           "详见 docs/acceptance-report.md。")
     return 0
 

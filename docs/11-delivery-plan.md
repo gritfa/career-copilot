@@ -1,9 +1,16 @@
 # 11. 10～12 周实施计划
 
-> **2026-07-30 修订（ADR-002）**：ADR-001 D1 对第 5 周的裁剪（「连接器非阻断、供给不足不阻塞
+> **2026-07-30 修订（ADR-002）**`dropped_portfolio_pivot`：ADR-001 D1 对第 5 周的裁剪（「连接器非阻断、供给不足不阻塞
 > Beta」）作废。真实岗位来源 Spike 是 MVP 硬门槛：至少一个真实合规来源端到端产出真实岗位并
 > 进入推荐、形成书面 Spike 结论之前，不得宣称「完整本地 MVP」或「Beta 就绪」；用户导入仅为
 > 降级/补充路径。见 [ADR-002](13-adr-002-supply-spike-gate.md)。
+> （本条门槛已被 [ADR-003](14-adr-003-portfolio-pivot.md) 废弃；ADR-002 的事实记录仍然有效。）
+
+> **2026-07-30 修订（ADR-003 作品集转向）**：项目定位改为个人作品集，本计划中所有
+> 运营导向条目失效，逐条以 `dropped_portfolio_pivot` 标注（不删除，保留决策轨迹）。
+> 涉及：爬虫/连接器路线、ICP 备案、Beta 指标、备份/熔断演练、隐私政策专业复核、
+> 真实邮件送达验证、7 天稳定性观察、云端部署。当前执行路线见
+> [15-portfolio-convergence-plan.md](15-portfolio-convergence-plan.md)。
 
 ## 1. 实施方式
 
@@ -55,7 +62,7 @@
 
 验收：硬约束、薪资三态、学历 required/preferred 测试。
 
-### 第 5 周：首批来源连接器（ADR-002：本周目标为 MVP 硬门槛，不得降级）
+### 第 5 周：首批来源连接器 `dropped_portfolio_pivot`（ADR-003：不再投入爬虫/连接器路线；Spike 核查记录保留于 supply-spike/）
 
 交付：
 
@@ -122,11 +129,11 @@
 
 - 60组完整人工标注、权重校准。
 - 全量 CI/E2E、安全测试、日志敏感扫描。
-- 本地运行手册、备份恢复演练。
+- 本地运行手册、备份恢复演练。`dropped_portfolio_pivot`（备份/熔断演练不做）
 
-验收：PRD Beta 前本地门槛全部通过或明确 No-go。
+验收：PRD Beta 前本地门槛全部通过或明确 No-go。`dropped_portfolio_pivot`（Beta 门槛失效）
 
-### 第 12 周：缓冲与云端 Beta 准备
+### 第 12 周：缓冲与云端 Beta 准备 `dropped_portfolio_pivot`（云端部署、ICP、隐私政策专业复核、Beta 均不做）
 
 交付：
 
@@ -186,6 +193,6 @@
 - Docker/部署配置与 `.env.example`。
 - 自动化测试、60组评测集和报告。
 - 来源能力矩阵、模型/提示词版本清单。
-- 安全、备份、恢复、发布、回滚运行手册。
-- 隐私/用户协议草案和专业复核清单。
+- 安全、备份、恢复、发布、回滚运行手册。`dropped_portfolio_pivot`
+- 隐私/用户协议草案和专业复核清单。`dropped_portfolio_pivot`
 - 本地完成证据与仍未验证的云端/Beta 边界。
