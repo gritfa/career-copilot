@@ -31,6 +31,18 @@ git clone https://github.com/gritfa/career-copilot.git && cd career-copilot
 - 前置依赖：docker、uv、node/npm。
 - Windows：提供等价脚本 [demo.ps1](demo.ps1)，**尚未在真机验证**，遇到问题请以 demo.sh 逻辑为准。
 
+### 界面预览
+
+以下截图取自本地 demo 实跑（1440×900），页面中的岗位、公司、分数均为**合成种子数据**（带「合成示例」徽标），不对应任何真实在招岗位。
+
+| 登录（邀请码 + 邮箱免密链接） | 首页概览 |
+|---|---|
+| ![登录页](docs/screenshots/login.png) | ![首页概览](docs/screenshots/dashboard.png) |
+
+| 每日推荐（分数 + 徽标 + 风险提示） | 推荐详情（硬条件 + 分项评分溯源） |
+|---|---|
+| ![每日推荐](docs/screenshots/recommendations.png) | ![推荐详情](docs/screenshots/recommendation-detail.png) |
+
 ## 能力现状（如实声明）
 
 作品集的可信度来自不夸大。下表区分「真实执行」与「合成替身」：
