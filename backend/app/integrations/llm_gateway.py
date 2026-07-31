@@ -36,7 +36,16 @@ _PRICE_PER_1M_TOKENS: dict[str, tuple[float, float]] = {
 
 
 class LLMError(Exception):
-    """LLM 调用失败（超时/网络/供应商错误），有限重试后向调用方抛出。"""
+    """LLM 调用失败（超时/网络/供应商错误），有限重试后向调用方抛出。
+
+    携带 ``usage``：失败发生前若已有成功的真实调用（如第一次调用成功但
+    Schema 错误、修复请求才失败），token 已实际消耗，异常必须带上累计用量，
+    调用方照常写 usage_ledger（PR#4 review：失败调用不许丢账）。
+    """
+
+    def __init__(self, message: str, usage: "LLMUsage | None" = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class LLMNotConfiguredError(LLMError):
@@ -53,10 +62,6 @@ class LLMSchemaError(LLMError):
     携带 ``usage``：Schema 失败前的真实调用已实际消耗供应商 token，
     调用方必须照常写 usage_ledger（P0 实跑暴露：失败 run 的费用曾丢账）。
     """
-
-    def __init__(self, message: str, usage: "LLMUsage | None" = None) -> None:
-        super().__init__(message)
-        self.usage = usage
 
 
 class LLMProviderRejectedError(LLMError):
@@ -276,6 +281,19 @@ class ModelGateway:
             tokens_out += raw.tokens_out
             return raw
 
+        def _accumulated_usage(*, repaired: bool) -> LLMUsage:
+            return LLMUsage(
+                provider=self.adapter.provider,
+                model_id=self.adapter.model_id,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                amount_estimated=_estimate_amount(
+                    self.adapter.provider, self.adapter.model_id, tokens_in, tokens_out
+                ),
+                attempts=attempts,
+                repaired=repaired,
+            )
+
         raw = _call(request)
         parsed, error_note = self._try_validate(raw.content, output_model)
         repaired = False
@@ -293,7 +311,15 @@ class ModelGateway:
                 schema_name=request.schema_name,
                 max_output_tokens=request.max_output_tokens,
             )
-            raw = _call(repair_request)
+            try:
+                raw = _call(repair_request)
+            except LLMError as exc:
+                # PR#4 review 第 2 条：第一次调用成功（token 已实际消耗）但 Schema
+                # 错误，修复请求本身失败（网络/401/5xx）时，第一次的用量曾经丢账。
+                # 该分支同样携带累计用量，调用方照常写 usage_ledger。
+                if exc.usage is None:
+                    exc.usage = _accumulated_usage(repaired=True)
+                raise
             parsed, error_note = self._try_validate(raw.content, output_model)
             if parsed is None:
                 logger.warning(
@@ -305,33 +331,10 @@ class ModelGateway:
                 )
                 raise LLMSchemaError(
                     f"output failed schema {request.schema_name} after one repair",
-                    usage=LLMUsage(
-                        provider=self.adapter.provider,
-                        model_id=self.adapter.model_id,
-                        tokens_in=tokens_in,
-                        tokens_out=tokens_out,
-                        amount_estimated=_estimate_amount(
-                            self.adapter.provider,
-                            self.adapter.model_id,
-                            tokens_in,
-                            tokens_out,
-                        ),
-                        attempts=attempts,
-                        repaired=True,
-                    ),
+                    usage=_accumulated_usage(repaired=True),
                 )
 
-        usage = LLMUsage(
-            provider=self.adapter.provider,
-            model_id=self.adapter.model_id,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            amount_estimated=_estimate_amount(
-                self.adapter.provider, self.adapter.model_id, tokens_in, tokens_out
-            ),
-            attempts=attempts,
-            repaired=repaired,
-        )
+        usage = _accumulated_usage(repaired=repaired)
         # 结构化日志：只含计数/模型/Schema 名，绝不含提示词或响应正文
         logger.info(
             "llm_completed",

@@ -279,6 +279,52 @@ def test_schema_fails_after_one_repair_no_fake_success():
     assert usage.amount_estimated > 0  # deepseek 真实扣费不因失败清零
 
 
+def test_repair_call_network_failure_carries_first_call_usage(monkeypatch):
+    """PR#4 review 第 2 条：首次调用成功但 Schema 错误、修复请求网络失败 → 不丢账。
+
+    第一次请求已实际消耗供应商 token；修复请求耗尽重试抛 LLMError 时，
+    异常必须携带第一次的累计用量，供调用方照常写 usage_ledger。
+    """
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter(
+        ['{"wrong": 1}', LLMError("net a"), LLMError("net b"), LLMError("net c")]
+    )
+    with pytest.raises(LLMError) as exc_info:
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert not isinstance(exc_info.value, LLMSchemaError)  # 网络失败，不是 Schema 失败
+    usage = exc_info.value.usage
+    assert usage is not None, "修复请求失败也必须携带已累计用量（丢账路径）"
+    assert usage.tokens_in == 100 and usage.tokens_out == 50  # 只计第一次成功调用
+    assert usage.attempts == 1 and usage.repaired is True
+    assert usage.amount_estimated == pytest.approx(
+        100 / 1_000_000 * 2.0 + 50 / 1_000_000 * 8.0
+    )
+
+
+def test_repair_call_rejected_401_carries_first_call_usage(monkeypatch):
+    """首次成功 + Schema 错误 → 修复请求 401 被供应商拒绝：类型不变、用量必须带上。"""
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter(
+        ['{"wrong": 1}', LLMProviderRejectedError("deepseek rejected request: HTTP 401")]
+    )
+    with pytest.raises(LLMProviderRejectedError) as exc_info:
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert len(adapter.calls) == 2  # 401 不重试
+    usage = exc_info.value.usage
+    assert usage is not None
+    assert usage.tokens_in == 100 and usage.tokens_out == 50
+    assert usage.amount_estimated > 0
+
+
+def test_first_call_failure_has_no_usage_to_carry(monkeypatch):
+    """第一次调用就失败（无任何成功响应）→ 无用量可携带，usage 保持 None。"""
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter([LLMError("a"), LLMError("b"), LLMError("c")])
+    with pytest.raises(LLMError) as exc_info:
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert exc_info.value.usage is None  # 没消耗过 token，绝不虚增账本
+
+
 # ---------------- 日志边界：正文绝不入日志 ----------------
 
 

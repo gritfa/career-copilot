@@ -195,7 +195,11 @@ def execute_resume_tailoring(
         return _fail_version(db, version, "SCHEMA_INVALID")
     except (LLMNotConfiguredError, LLMAuthorizationError):
         return _fail_version(db, version, "CONSENT_REQUIRED")
-    except LLMError:
+    except LLMError as exc:
+        # 修复请求失败前若已有成功调用（token 已实际扣费），异常携带累计用量：
+        # 照常记账，不丢账（PR#4 review 第 2 条）
+        if exc.usage is not None:
+            _record_llm_usage(db, version.user_id, exc.usage)
         return _fail_version(db, version, "MODEL_UNAVAILABLE")
 
     _record_llm_usage(db, version.user_id, usage)
