@@ -216,38 +216,70 @@ def test_deepseek_adapter_5xx_stays_retryable(monkeypatch):
         get_settings.cache_clear()
 
 
-def test_probe_runtime(monkeypatch):
-    """运行可用探测：200 → True；网络失败/非 200 → False；无 key 不发请求。"""
+async def test_probe_runtime(monkeypatch):
+    """运行可用探测（异步）：200 → True；网络失败/非 200 → False；无 key 不发请求。"""
     import httpx as _httpx
 
     from app.core.config import get_settings
+
+    def _fake_async_client(get_impl):
+        class _FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc_info):
+                return False
+
+            async def get(self, url, **kwargs):
+                return get_impl(url)
+
+        return _FakeAsyncClient
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key")
     get_settings.cache_clear()
     try:
         adapter = DeepSeekAdapter()
 
-        def _ok_get(url, **kwargs):
-            return _httpx.Response(200, request=_httpx.Request("GET", url))
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(
+                lambda url: _httpx.Response(200, request=_httpx.Request("GET", url))
+            ),
+        )
+        assert await adapter.probe_runtime() is True
 
-        monkeypatch.setattr("app.integrations.llm_gateway.httpx.get", _ok_get)
-        assert adapter.probe_runtime() is True
-
-        def _fail_get(url, **kwargs):
+        def _raise_connect_error(url):
             raise _httpx.ConnectError("boom")
 
-        monkeypatch.setattr("app.integrations.llm_gateway.httpx.get", _fail_get)
-        assert adapter.probe_runtime() is False
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(_raise_connect_error),
+        )
+        assert await adapter.probe_runtime() is False
+
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(
+                lambda url: _httpx.Response(401, request=_httpx.Request("GET", url))
+            ),
+        )
+        assert await adapter.probe_runtime() is False
 
         monkeypatch.setenv("DEEPSEEK_API_KEY", "")
         get_settings.cache_clear()
         unconfigured = DeepSeekAdapter()
 
-        def _explode(url, **kwargs):
+        def _explode(url):
             raise AssertionError("未配置时不得发起探测请求")
 
-        monkeypatch.setattr("app.integrations.llm_gateway.httpx.get", _explode)
-        assert unconfigured.probe_runtime() is False
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(_explode),
+        )
+        assert await unconfigured.probe_runtime() is False
     finally:
         get_settings.cache_clear()
 

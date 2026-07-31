@@ -84,24 +84,52 @@ MODEL_VERIFICATION_EVIDENCE: dict[str, dict[str, str] | None] = {
 # 探测结果缓存：capability -> (wall_time, "available"/"unavailable")
 _probe_cache: dict[str, tuple[float, str]] = {}
 
+# 冷启动并发探测锁：懒创建（asyncio.Lock 绑定首次使用的事件循环；
+# 测试/脚本各自 asyncio.run 时经 reset_probe_cache 一并重置）
+_probe_lock: asyncio.Lock | None = None
+
 
 def reset_probe_cache() -> None:
-    """测试与进程内配置变更后清空运行探测缓存。"""
+    """测试与进程内配置变更后清空运行探测缓存（含并发锁）。"""
+    global _probe_lock
     _probe_cache.clear()
+    _probe_lock = None
 
 
-def _deepseek_runtime(configured: bool) -> tuple[str, str | None]:
-    """运行可用探测（带 TTL 缓存）；未配置时不发任何网络请求。"""
+def _get_probe_lock() -> asyncio.Lock:
+    global _probe_lock
+    if _probe_lock is None:
+        _probe_lock = asyncio.Lock()
+    return _probe_lock
+
+
+def _cached_probe() -> tuple[str, str | None] | None:
+    cached = _probe_cache.get("deepseek_generation")
+    if cached is not None and time.time() - cached[0] < _MODEL_PROBE_TTL_SECONDS:
+        return cached[1], datetime.fromtimestamp(cached[0], tz=UTC).isoformat()
+    return None
+
+
+async def _deepseek_runtime(configured: bool) -> tuple[str, str | None]:
+    """运行可用探测（异步 + TTL 缓存）；未配置时不发任何网络请求。
+
+    PR#4 review 第 3 条：探测走 httpx.AsyncClient，不再阻塞事件循环；
+    冷启动并发请求经 asyncio.Lock 串行化——只有第一个协程真正外呼，
+    其余在锁后直接命中缓存（双检）。
+    """
     if not configured:
         return "not_probed", None
-    cached = _probe_cache.get("deepseek_generation")
-    now = time.time()
-    if cached is not None and now - cached[0] < _MODEL_PROBE_TTL_SECONDS:
-        checked_at = datetime.fromtimestamp(cached[0], tz=UTC).isoformat()
-        return cached[1], checked_at
-    status = "available" if DeepSeekAdapter().probe_runtime() else "unavailable"
-    _probe_cache["deepseek_generation"] = (now, status)
-    return status, datetime.fromtimestamp(now, tz=UTC).isoformat()
+    hit = _cached_probe()
+    if hit is not None:
+        return hit
+    async with _get_probe_lock():
+        hit = _cached_probe()  # 双检：等锁期间可能已有协程写入缓存
+        if hit is not None:
+            return hit
+        now = time.time()
+        status = "available" if await DeepSeekAdapter().probe_runtime() else "unavailable"
+        _probe_cache["deepseek_generation"] = (now, status)
+        return status, datetime.fromtimestamp(now, tz=UTC).isoformat()
 
 
 def _summary_status(configured: bool, runtime: str) -> str:
@@ -114,10 +142,10 @@ def _summary_status(configured: bool, runtime: str) -> str:
     return "configured"
 
 
-def _model_capabilities() -> dict[str, dict[str, Any]]:
+async def _model_capabilities() -> dict[str, dict[str, Any]]:
     settings = get_settings()
     deepseek_configured = bool(settings.deepseek_api_key)
-    runtime, checked_at = _deepseek_runtime(deepseek_configured)
+    runtime, checked_at = await _deepseek_runtime(deepseek_configured)
     return {
         "deepseek_generation": {
             "status": _summary_status(deepseek_configured, runtime),
@@ -249,5 +277,5 @@ async def capabilities() -> dict[str, Any]:
     其余能力保持字符串状态。
     """
     merged: dict[str, Any] = dict(CAPABILITIES)
-    merged.update(_model_capabilities())
+    merged.update(await _model_capabilities())
     return {"capabilities": merged}

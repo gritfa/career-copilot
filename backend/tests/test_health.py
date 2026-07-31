@@ -115,7 +115,7 @@ async def test_model_capability_probed_available(client, monkeypatch):
     get_settings.cache_clear()
     probe_calls = {"n": 0}
 
-    def _probe(self):
+    async def _probe(self):
         probe_calls["n"] += 1
         return True
 
@@ -141,15 +141,46 @@ async def test_model_capability_probed_unavailable(client, monkeypatch):
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key-for-probe-test")
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        health_module.DeepSeekAdapter, "probe_runtime", lambda self: False
-    )
+
+    async def _probe_fail(self):
+        return False
+
+    monkeypatch.setattr(health_module.DeepSeekAdapter, "probe_runtime", _probe_fail)
     try:
         entry = (await client.get("/health/capabilities")).json()["capabilities"][
             "deepseek_generation"
         ]
         assert entry["runtime"] == "unavailable"
         assert entry["status"] == "unavailable"
+    finally:
+        get_settings.cache_clear()
+
+
+async def test_concurrent_cold_start_probes_only_once(client, monkeypatch):
+    """PR#4 review 第 3 条：冷启动并发请求经 asyncio.Lock 串行化，只外呼一次。"""
+    import asyncio
+
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key-for-probe-test")
+    get_settings.cache_clear()
+    probe_calls = {"n": 0}
+
+    async def _slow_probe(self):
+        probe_calls["n"] += 1
+        await asyncio.sleep(0.05)  # 拉长探测窗口，保证两请求真正并发进入
+        return True
+
+    monkeypatch.setattr(health_module.DeepSeekAdapter, "probe_runtime", _slow_probe)
+    try:
+        r1, r2 = await asyncio.gather(
+            client.get("/health/capabilities"), client.get("/health/capabilities")
+        )
+        for resp in (r1, r2):
+            entry = resp.json()["capabilities"]["deepseek_generation"]
+            assert entry["runtime"] == "available"
+            assert entry["status"] == "available"
+        assert probe_calls["n"] == 1, "冷启动并发必须只探测一次（锁 + 双检缓存）"
     finally:
         get_settings.cache_clear()
 

@@ -200,20 +200,22 @@ class DeepSeekAdapter:
             provider_request_id=payload.get("id"),
         )
 
-    def probe_runtime(self) -> bool:
+    async def probe_runtime(self) -> bool:
         """运行可用性轻量探测（capabilities 三态之「运行可用」）。
 
         GET /models：零 token 费用，验证 key 当下有效且服务可达。
         任何失败（网络/4xx/5xx）→ False，绝不抛异常、绝不记录响应正文。
+        异步实现（httpx.AsyncClient）：/health/capabilities 在事件循环内调用，
+        同步阻塞版最坏会卡住整个事件循环 10s（PR#4 review 第 3 条）。
         """
         if not self.configured:
             return False
         try:
-            response = httpx.get(
-                f"{self._base_url}/models",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=min(self._timeout, 10.0),
-            )
+            async with httpx.AsyncClient(timeout=min(self._timeout, 10.0)) as client:
+                response = await client.get(
+                    f"{self._base_url}/models",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                )
         except httpx.HTTPError:
             return False
         return response.status_code == 200
