@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Button from "@/components/ui/Button";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -29,22 +30,26 @@ export default function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="dialog">
-        <h3>{title}</h3>
-        <div style={{ fontSize: 14, lineHeight: 1.6 }}>{children}</div>
-        <div className="dialog-actions">
-          <button type="button" className="btn" onClick={onCancel} disabled={loading}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+        <h3 className="mb-2 text-base font-semibold text-slate-900">{title}</h3>
+        <div className="text-sm leading-relaxed text-slate-700">{children}</div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button onClick={onCancel} disabled={loading}>
             {cancelText}
-          </button>
-          <button
-            type="button"
-            className={danger ? "btn btn-danger" : "btn btn-primary"}
+          </Button>
+          <Button
+            variant={danger ? "danger" : "primary"}
             onClick={onConfirm}
-            disabled={loading}
+            loading={loading}
           >
             {loading ? "处理中…" : confirmText}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -202,7 +202,7 @@ function ChangesList({ version }: { version: ResumeVersion }) {
           <div
             key={i}
             style={{
-              borderTop: i > 0 ? "1px solid rgba(127,127,127,0.25)" : undefined,
+              borderTop: i > 0 ? "1px solid var(--border)" : undefined,
               marginTop: i > 0 ? 10 : 0,
               paddingTop: i > 0 ? 10 : 0,
             }}

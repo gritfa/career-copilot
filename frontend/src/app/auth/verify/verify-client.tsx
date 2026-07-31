@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import type { VerifyResponse } from "@/lib/types";
+import { buttonClasses } from "@/components/ui/Button";
 
 type State = "verifying" | "success" | "failed";
 
@@ -46,20 +47,22 @@ export default function VerifyClient() {
   }, [token, router]);
 
   if (state === "verifying") {
-    return <p>正在验证登录链接…</p>;
+    return <p className="text-sm text-slate-600">正在验证登录链接…</p>;
   }
 
   if (state === "success") {
-    return <p>验证成功，正在跳转…</p>;
+    return <p className="text-sm text-slate-600">验证成功，正在跳转…</p>;
   }
 
   return (
     <div>
-      <h1>链接已失效，请重新获取</h1>
-      <p style={{ margin: "12px 0", lineHeight: 1.7 }} className="muted">
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        链接已失效，请重新获取
+      </h1>
+      <p className="mt-3 mb-6 text-sm leading-relaxed text-slate-600">
         登录链接短时有效且只能使用一次。请返回登录页重新发送。
       </p>
-      <Link href="/login" className="btn btn-primary">
+      <Link href="/login" className={buttonClasses("primary", "md", "w-full")}>
         返回登录页
       </Link>
     </div>

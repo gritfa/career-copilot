@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { API_BASE_URL, ApiError, api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
 import RecommendationCard from "@/components/RecommendationCard";
+import PageHeader from "@/components/ui/PageHeader";
+import Card from "@/components/ui/Card";
+import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import { buttonClasses } from "@/components/ui/Button";
+import EmptyStateBlock from "@/components/ui/EmptyState";
+import Skeleton, { CardSkeleton } from "@/components/ui/Skeleton";
+import { Field, Select } from "@/components/ui/form";
+import { IconArrowRight, IconSparkles } from "@/components/ui/icons";
 import {
   type CapabilityEntry,
   type Recommendation,
@@ -69,6 +77,37 @@ function isToday(iso?: string): boolean {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate()
   );
+}
+
+/** 统计卡片（数值 + 语义色顶部小条） */
+function StatCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: ReactNode;
+  accent: string;
+}) {
+  return (
+    <div className="min-w-[120px] flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+      <div className={`h-1 ${accent}`} />
+      <div className="px-4 py-3.5">
+        <p className="text-sm text-slate-600">{label}</p>
+        <p className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** 能力状态 badgeClass → 语义 tone（复用 types.ts 的状态归类，不改逻辑） */
+function capabilityTone(badgeClass: string): BadgeTone {
+  if (badgeClass.includes("badge-ok")) return "success";
+  if (badgeClass.includes("badge-busy")) return "warning";
+  if (badgeClass.includes("badge-fail")) return "danger";
+  return "neutral";
 }
 
 export default function DashboardPage() {
@@ -155,109 +194,110 @@ export default function DashboardPage() {
 
   return (
     <main className="page">
-      <h1>首页概览</h1>
+      <PageHeader
+        title="首页概览"
+        actions={
+          <Field label="求职方案" className="w-64">
+            <Select value={planId} onChange={(e) => setPlanId(e.target.value)}>
+              <option value="">全部方案</option>
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name || directionLabel(plan.role_family ?? plan.direction)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        }
+      />
 
-      <div className="filters">
-        <label className="field" style={{ maxWidth: 280 }}>
-          <span>求职方案</span>
-          <select
-            className="input"
-            value={planId}
-            onChange={(e) => setPlanId(e.target.value)}
-          >
-            <option value="">全部方案</option>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.name || directionLabel(plan.role_family ?? plan.direction)}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="flex flex-wrap gap-3">
+        <StatCard
+          label="今日新岗位"
+          value={recState?.kind === "ready" ? todayCount : "—"}
+          accent="bg-primary"
+        />
+        <StatCard
+          label="高匹配"
+          value={recState?.kind === "ready" ? highCount : "—"}
+          accent="bg-emerald-500"
+        />
+        <StatCard
+          label="可尝试"
+          value={recState?.kind === "ready" ? potentialCount : "—"}
+          accent="bg-amber-500"
+        />
       </div>
 
-      <div className="stat-row">
-        <div className="stat">
-          <span className="muted">今日新岗位</span>
-          <div className="stat-value">
-            {recState?.kind === "ready" ? todayCount : "—"}
-          </div>
-        </div>
-        <div className="stat">
-          <span className="muted">高匹配</span>
-          <div className="stat-value">{recState?.kind === "ready" ? highCount : "—"}</div>
-        </div>
-        <div className="stat">
-          <span className="muted">可尝试</span>
-          <div className="stat-value">
-            {recState?.kind === "ready" ? potentialCount : "—"}
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "baseline",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        <h2>最新推荐</h2>
-        <Link href="/recommendations" className="link" style={{ fontSize: 14 }}>
-          查看全部推荐 →
+      <div className="mt-7 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold text-slate-900">最新推荐</h2>
+        <Link
+          href="/recommendations"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary-hover"
+        >
+          查看全部推荐
+          <IconArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
-      <p className="muted">分数代表岗位适配度，不代表面试或录用概率。</p>
+      <p className="text-sm text-slate-600">
+        分数代表岗位适配度，不代表面试或录用概率。
+      </p>
 
-      {recState === null ? <p className="muted">加载中…</p> : null}
+      {recState === null ? (
+        <div aria-label="加载中">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      ) : null}
       {recState?.kind === "error" ? (
-        <p className="error-text">{recState.reason}</p>
+        <p className="mt-2 text-sm text-danger">{recState.reason}</p>
       ) : null}
       {recState?.kind === "ready" && latest.length === 0 ? (
-        <div className="card">
-          <p>今天还没有可推荐的岗位。</p>
-          <p style={{ marginTop: 8 }}>
-            <Link href="/recommendations" className="link">
+        <EmptyStateBlock
+          className="mt-3"
+          icon={<IconSparkles className="h-6 w-6" />}
+          title="今天还没有可推荐的岗位"
+          action={
+            <Link href="/recommendations" className={buttonClasses("secondary", "sm")}>
               查看原因与原平台搜索入口 →
             </Link>
-          </p>
-        </div>
+          }
+        />
       ) : null}
       {latest.map((item) => (
         <RecommendationCard key={item.id} item={item} />
       ))}
 
-      <h2>系统状态</h2>
-      <div className="card">
+      <h2 className="mt-7 mb-2.5 text-lg font-semibold text-slate-900">系统状态</h2>
+      <Card>
         {caps === null ? (
-          <p className="muted">系统状态加载中…</p>
+          <div className="space-y-2" aria-label="系统状态加载中">
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-6 w-2/3" />
+          </div>
         ) : caps.failed ? (
-          <p className="muted">能力状态暂不可用，不影响推荐浏览。</p>
+          <p className="text-sm text-slate-600">能力状态暂不可用，不影响推荐浏览。</p>
         ) : (
           <>
-            <p style={{ fontSize: 14 }}>
+            <p className="text-sm text-slate-700">
               岗位数据更新于 {caps.updatedAt ? fmtTime(caps.updatedAt) : "—"}
             </p>
             {caps.entries.length > 0 ? (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {caps.entries.map((entry) => {
                   const meta = capabilityStatusMeta(entry.status);
                   return (
-                    <span key={entry.name} className={meta.badgeClass}>
+                    <Badge key={entry.name} tone={capabilityTone(meta.badgeClass)}>
                       {entry.label}：{meta.label}
-                    </span>
+                    </Badge>
                   );
                 })}
               </div>
             ) : (
-              <p className="muted" style={{ marginTop: 6 }}>
-                暂无逐项能力状态。
-              </p>
+              <p className="mt-1.5 text-sm text-slate-400">暂无逐项能力状态。</p>
             )}
           </>
         )}
-      </div>
+      </Card>
     </main>
   );
 }

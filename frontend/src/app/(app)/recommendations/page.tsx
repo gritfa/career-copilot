@@ -5,6 +5,13 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
 import RecommendationCard from "@/components/RecommendationCard";
+import PageHeader from "@/components/ui/PageHeader";
+import Card from "@/components/ui/Card";
+import Button, { buttonClasses } from "@/components/ui/Button";
+import EmptyStateBlock from "@/components/ui/EmptyState";
+import { CardSkeleton } from "@/components/ui/Skeleton";
+import { Field, Input, Select } from "@/components/ui/form";
+import { IconExternalLink, IconImport, IconSparkles } from "@/components/ui/icons";
 import {
   type EmptyReason,
   type LinkOutEntry,
@@ -120,65 +127,66 @@ export default function RecommendationsPage() {
 
   return (
     <main className="page">
-      <h1>每日推荐</h1>
-      <p className="muted">分数代表岗位适配度，不代表面试或录用概率。</p>
+      <PageHeader
+        title="每日推荐"
+        description="分数代表岗位适配度，不代表面试或录用概率。"
+      />
 
-      <div className="filters">
-        <label className="field">
-          <span>方案</span>
-          <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
-            <option value="">全部方案</option>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.name || directionLabel(plan.role_family ?? plan.direction)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>日期</span>
-          <input
-            type="date"
-            className="input"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>等级</span>
-          <select className="input" value={grade} onChange={(e) => setGrade(e.target.value)}>
-            <option value="">全部等级</option>
-            {Object.entries(GRADE_NAMES).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>状态</span>
-          <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <Card className="mb-5 py-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="方案" className="min-w-[140px] flex-1">
+            <Select value={planId} onChange={(e) => setPlanId(e.target.value)}>
+              <option value="">全部方案</option>
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name || directionLabel(plan.role_family ?? plan.direction)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="日期" className="min-w-[140px] flex-1">
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+          <Field label="等级" className="min-w-[130px] flex-1">
+            <Select value={grade} onChange={(e) => setGrade(e.target.value)}>
+              <option value="">全部等级</option>
+              {Object.entries(GRADE_NAMES).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="状态" className="min-w-[130px] flex-1">
+            <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </Card>
 
-      {state === null ? <p className="muted">加载中…</p> : null}
+      {state === null ? (
+        <div aria-label="加载中">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      ) : null}
 
       {state?.kind === "error" ? (
         <>
-          <p className="error-text">{state.reason}</p>
+          <p className="text-sm text-danger">{state.reason}</p>
           <ImportEntry />
         </>
       ) : null}
 
       {state?.kind === "ready" && state.items.length > 0 ? (
         <>
-          <p className="muted">共 {state.items.length} 条推荐。</p>
+          <p className="text-sm text-slate-600">共 {state.items.length} 条推荐。</p>
           {state.items.map((item) => (
             <RecommendationCard key={item.id} item={item} />
           ))}
@@ -187,15 +195,12 @@ export default function RecommendationsPage() {
 
       {state?.kind === "ready" && state.items.length === 0 ? (
         filtered ? (
-          <div className="card">
-            <strong>当前筛选条件下没有推荐</strong>
-            <p className="muted" style={{ marginTop: 6 }}>
-              可以调整方案、日期、等级或状态筛选，或清空筛选后查看全部推荐。
-            </p>
-            <p style={{ marginTop: 10 }}>
-              <button
-                type="button"
-                className="btn"
+          <EmptyStateBlock
+            icon={<IconSparkles className="h-6 w-6" />}
+            title="当前筛选条件下没有推荐"
+            description="可以调整方案、日期、等级或状态筛选，或清空筛选后查看全部推荐。"
+            action={
+              <Button
                 onClick={() => {
                   setPlanId("");
                   setDate("");
@@ -204,18 +209,18 @@ export default function RecommendationsPage() {
                 }}
               >
                 清空筛选
-              </button>
-            </p>
-          </div>
+              </Button>
+            }
+          />
         ) : (
-          <EmptyState reason={state.emptyReason} linkOuts={state.linkOuts} />
+          <RecommendationEmpty reason={state.emptyReason} linkOuts={state.linkOuts} />
         )
       ) : null}
     </main>
   );
 }
 
-function EmptyState({
+function RecommendationEmpty({
   reason,
   linkOuts,
 }: {
@@ -224,58 +229,64 @@ function EmptyState({
 }) {
   return (
     <>
-      <div className="card">
-        <strong>今天还没有可推荐的岗位</strong>
-        {reason !== "unknown" ? (
-          <div className="notice">
-            <strong>{REASON_TEXTS[reason].title}：</strong>
-            {REASON_TEXTS[reason].body}
-          </div>
-        ) : (
-          <div style={{ marginTop: 8, fontSize: 14 }}>
-            <p>可能的原因：</p>
-            <ul style={{ margin: "6px 0 0 18px", lineHeight: 1.8 }}>
-              <li>
-                <strong>来源暂无数据</strong>：{REASON_TEXTS.no_source_data.body}
-              </li>
-              <li>
-                <strong>硬条件过严</strong>：{REASON_TEXTS.hard_conditions_too_strict.body}
-              </li>
-              <li>
-                <strong>来源能力降级</strong>：{REASON_TEXTS.capability_degraded.body}
-              </li>
-            </ul>
-          </div>
-        )}
-        <p style={{ marginTop: 10 }}>
-          <Link href="/plans" className="link">
+      <EmptyStateBlock
+        icon={<IconSparkles className="h-6 w-6" />}
+        title="今天还没有可推荐的岗位"
+        description={
+          reason !== "unknown" ? (
+            <span className="notice mt-2 block text-left">
+              <strong>{REASON_TEXTS[reason].title}：</strong>
+              {REASON_TEXTS[reason].body}
+            </span>
+          ) : (
+            <span className="mt-2 block text-left">
+              <span className="block">可能的原因：</span>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5 text-left leading-relaxed">
+                <li>
+                  <strong>来源暂无数据</strong>：{REASON_TEXTS.no_source_data.body}
+                </li>
+                <li>
+                  <strong>硬条件过严</strong>：{REASON_TEXTS.hard_conditions_too_strict.body}
+                </li>
+                <li>
+                  <strong>来源能力降级</strong>：{REASON_TEXTS.capability_degraded.body}
+                </li>
+              </ul>
+            </span>
+          )
+        }
+        action={
+          <Link href="/plans" className={buttonClasses("secondary", "sm")}>
             去调整求职方案 →
           </Link>
-        </p>
-      </div>
+        }
+      />
 
-      <h2>按你的方案去原平台搜索</h2>
+      <h2 className="mt-7 mb-2.5 text-lg font-semibold text-slate-900">
+        按你的方案去原平台搜索
+      </h2>
       {linkOuts.length > 0 ? (
         <>
-          <p className="muted">
+          <p className="text-sm text-slate-600">
             以下链接按你的方向、城市和薪资拼好了搜索条件，点开即到原平台查看：
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}>
+          <div className="my-2.5 flex flex-wrap gap-2">
             {linkOuts.map((entry) => (
               <a
                 key={entry.url}
-                className="btn"
+                className={buttonClasses("secondary", "sm")}
                 href={entry.url}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {entry.label} ↗
+                {entry.label}
+                <IconExternalLink className="h-3.5 w-3.5" />
               </a>
             ))}
           </div>
         </>
       ) : (
-        <p className="muted">
+        <p className="text-sm text-slate-600">
           暂无可用的跳转链接。激活一个求职方案后，这里会显示按方案条件拼好的原平台搜索入口。
         </p>
       )}
@@ -289,13 +300,16 @@ function EmptyState({
 function ImportEntry() {
   return (
     <>
-      <h2>看到合适的岗位？手动导入</h2>
-      <p className="muted">
+      <h2 className="mt-7 mb-2.5 text-lg font-semibold text-slate-900">
+        看到合适的岗位？手动导入
+      </h2>
+      <p className="text-sm text-slate-600">
         受平台政策限制，部分来源仅支持跳转到原平台或手动导入。
         把岗位链接或职位描述粘贴进来，系统会标准化后参与匹配打分。
       </p>
-      <p style={{ margin: "10px 0" }}>
-        <Link href="/jobs/import" className="btn btn-primary">
+      <p className="my-2.5">
+        <Link href="/jobs/import" className={buttonClasses("primary", "md")}>
+          <IconImport className="h-4 w-4" />
           导入岗位
         </Link>
       </p>

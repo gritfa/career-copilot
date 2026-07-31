@@ -133,7 +133,7 @@ export default function PrivacySettingsPage() {
                   fontSize: 13,
                   fontWeight: "normal",
                   marginLeft: 8,
-                  color: isActive(c) ? "#16a34a" : "#dc2626",
+                  color: isActive(c) ? "var(--color-success)" : "var(--color-danger)",
                 }}
               >
                 {isActive(c) ? "已授权" : "已撤回"}

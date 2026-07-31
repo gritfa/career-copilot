@@ -4,8 +4,36 @@ import { useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
+import Button from "@/components/ui/Button";
+import { Field, Input } from "@/components/ui/form";
+import { IconLogo, IconMail } from "@/components/ui/icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 认证页统一外壳：全屏渐变背景 + 居中品牌卡片 */
+function AuthCard({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-indigo-50 via-slate-50 to-slate-50 px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex items-center justify-center gap-2.5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white shadow-sm">
+            <IconLogo className="h-6 w-6" />
+          </span>
+          <span className="text-xl font-bold tracking-tight text-slate-900">
+            CareerCopilot
+          </span>
+        </div>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+          <div className="h-1.5 bg-gradient-to-r from-indigo-500 via-primary to-violet-500" />
+          <div className="p-8">{children}</div>
+        </div>
+        <p className="mt-6 text-center text-xs text-slate-400">
+          AI 求职助手：方案、推荐与简历工作台
+        </p>
+      </div>
+    </main>
+  );
+}
 
 export default function LoginPage() {
   const [inviteCode, setInviteCode] = useState("");
@@ -54,36 +82,43 @@ export default function LoginPage() {
 
   if (sent) {
     return (
-      <main className="page">
-        <h1>登录链接已发送到邮箱</h1>
-        <p style={{ margin: "12px 0", lineHeight: 1.7 }}>
+      <AuthCard>
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
+          <IconMail className="h-6 w-6" />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          登录链接已发送到邮箱
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">
           我们已向该邮箱发送了一封包含登录链接的邮件，链接短时有效且只能使用一次。
           请打开邮件并点击链接完成登录；如几分钟内未收到，请检查垃圾邮件或稍后重试。
         </p>
-        <button
-          type="button"
-          className="btn"
+        <Button
+          variant="secondary"
+          className="mt-6 w-full"
           onClick={() => {
             setSent(false);
             setError(null);
           }}
         >
           返回重新填写
-        </button>
-      </main>
+        </Button>
+      </AuthCard>
     );
   }
 
   return (
-    <main className="page" style={{ maxWidth: 480 }}>
-      <h1>登录 CareerCopilot</h1>
-      <p className="muted">使用邀请码和邮箱免密链接登录，无需设置密码。</p>
+    <AuthCard>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        登录 CareerCopilot
+      </h1>
+      <p className="mt-1.5 text-sm text-slate-600">
+        使用邀请码和邮箱免密链接登录，无需设置密码。
+      </p>
 
-      <form onSubmit={handleSubmit} style={{ marginTop: 24 }} noValidate>
-        <label className="field">
-          <span>邀请码</span>
-          <input
-            className="input"
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+        <Field label="邀请码">
+          <Input
             type="text"
             value={inviteCode}
             onChange={(e) => setInviteCode(e.target.value)}
@@ -91,12 +126,10 @@ export default function LoginPage() {
             autoComplete="off"
             disabled={loading}
           />
-        </label>
+        </Field>
 
-        <label className="field">
-          <span>邮箱</span>
-          <input
-            className="input"
+        <Field label="邮箱">
+          <Input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -104,24 +137,15 @@ export default function LoginPage() {
             autoComplete="email"
             disabled={loading}
           />
-        </label>
+        </Field>
 
-        <label
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "flex-start",
-            fontSize: 14,
-            lineHeight: 1.6,
-            margin: "16px 0",
-          }}
-        >
+        <label className="flex items-start gap-2.5 text-sm leading-relaxed text-slate-600">
           <input
             type="checkbox"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
             disabled={loading}
-            style={{ marginTop: 3 }}
+            className="mt-1 h-4 w-4 shrink-0 accent-indigo-600"
           />
           <span>
             我已年满 18 周岁，并同意
@@ -135,17 +159,12 @@ export default function LoginPage() {
           </span>
         </label>
 
-        {error && <p className="error-text">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
 
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={loading}
-          style={{ width: "100%" }}
-        >
+        <Button type="submit" variant="primary" className="w-full" loading={loading}>
           {loading ? "提交中…" : "发送登录链接"}
-        </button>
+        </Button>
       </form>
-    </main>
+    </AuthCard>
   );
 }

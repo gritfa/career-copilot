@@ -148,7 +148,7 @@ export default function AccountSettingsPage() {
             <p style={{ fontSize: 14, lineHeight: 1.7 }}>
               <strong>{isCurrent(s) ? "当前会话" : "其他设备会话"}</strong>
               {isCurrent(s) && (
-                <span style={{ color: "#16a34a", marginLeft: 8, fontSize: 13 }}>
+                <span style={{ color: "var(--color-success)", marginLeft: 8, fontSize: 13 }}>
                   ● 本设备
                 </span>
               )}
