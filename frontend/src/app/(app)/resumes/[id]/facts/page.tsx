@@ -231,7 +231,7 @@ export default function ResumeFactsPage() {
               {decision?.action === "reject" ? "✗ 已拒绝" : "拒绝"}
             </button>
             {decision?.action === "edit" && (
-              <span style={{ color: "#16a34a", fontSize: 14 }}>✓ 已编辑并接受</span>
+              <span style={{ color: "var(--color-success)", fontSize: 14 }}>✓ 已编辑并接受</span>
             )}
           </div>
         )}

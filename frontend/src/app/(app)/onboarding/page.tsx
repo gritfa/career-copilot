@@ -233,7 +233,7 @@ export default function OnboardingPage() {
                 )}
 
                 {state === "granted" ? (
-                  <p style={{ color: "#16a34a", fontSize: 14 }}>
+                  <p style={{ color: "var(--color-success)", fontSize: 14 }}>
                     ✓ 已授权。可随时在「设置 → 隐私」撤回。
                   </p>
                 ) : (
