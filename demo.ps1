@@ -132,10 +132,9 @@ function Cmd-Up {
     # Windows 下 Celery 需要 solo pool
     Start-Proc "worker" $backendDir "uv" @("run", "celery", "-A", "app.tasks.celery_app", "worker", "--loglevel", "info", "--pool", "solo")
     Start-Proc "beat" $backendDir "uv" @("run", "celery", "-A", "app.tasks.celery_app", "beat", "--loglevel", "info", "--schedule", (Join-Path $DemoDir "celerybeat-schedule"))
-    if (-not (Test-Path (Join-Path $frontendDir "node_modules"))) {
-        Info "安装前端依赖（npm install，首次较慢）..."
-        Push-Location $frontendDir; npm install | Out-Null; Pop-Location
-    }
+    # 无条件 install：package.json 变了也能补装新依赖（依赖齐时是秒级 no-op）
+    Info "同步前端依赖（npm install，首次较慢）..."
+    Push-Location $frontendDir; npm install --no-audit --no-fund | Out-Null; Pop-Location
     Start-Proc "frontend" $frontendDir "npm" @("run", "dev", "--", "--port", $FrontendPort)
 
     Info "等待 API 与前端就绪 ..."

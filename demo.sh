@@ -151,10 +151,9 @@ cmd_up() {
   start_proc worker "$ROOT/backend" uv run celery -A app.tasks.celery_app worker --loglevel info
   start_proc beat "$ROOT/backend" uv run celery -A app.tasks.celery_app beat --loglevel info \
     --schedule "$DEMO_DIR/celerybeat-schedule"
-  if [ ! -d "$ROOT/frontend/node_modules" ]; then
-    info "安装前端依赖（npm install，首次较慢）..."
-    (cd "$ROOT/frontend" && npm install >"$LOG_DIR/npm-install.log" 2>&1)
-  fi
+  # 无条件 install：package.json 变了也能补装新依赖（依赖齐时是秒级 no-op）
+  info "同步前端依赖（npm install，首次较慢）..."
+  (cd "$ROOT/frontend" && npm install --no-audit --no-fund >"$LOG_DIR/npm-install.log" 2>&1)
   start_proc frontend "$ROOT/frontend" npm run dev -- --port "$FRONTEND_PORT"
 
   info "等待 API 与前端就绪 ..."
