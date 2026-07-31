@@ -5,6 +5,9 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/api-error";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Button, { buttonClasses } from "@/components/ui/Button";
+import Badge, { SyntheticBadge, type BadgeTone } from "@/components/ui/Badge";
+import { Field, Textarea } from "@/components/ui/form";
 import {
   FEEDBACK_REASONS,
   type FeedbackReason,
@@ -14,7 +17,6 @@ import {
   RISK_SEVERITY_NAMES,
   feedbackReasonLabel,
   fmtTime,
-  gradeBadgeClass,
   gradeName,
   isSyntheticSeed,
   parseFeedback,
@@ -29,6 +31,25 @@ import {
   riskUncertain,
   workModeLabel,
 } from "@/lib/types";
+
+/** 等级 → 徽标语义色（high=success / potential=warning / 其他=neutral） */
+export function gradeTone(grade?: string): BadgeTone {
+  const g = (grade ?? "").toLowerCase();
+  if (g === "high") return "success";
+  if (g === "potential") return "warning";
+  return "neutral";
+}
+
+/** 总分 + 等级徽标（列表卡片与详情页共用） */
+export function ScoreBadge({ item }: { item: Recommendation }) {
+  if (item.score == null && !item.grade) return null;
+  return (
+    <Badge tone={gradeTone(item.grade)} className="px-3 py-1 text-sm font-semibold">
+      {item.score != null ? `${item.score} 分` : ""}
+      {item.grade ? `${item.score != null ? " · " : ""}${gradeName(item.grade)}` : ""}
+    </Badge>
+  );
+}
 
 /**
  * 推荐反馈操作（列表卡片与详情页共用，docs/05 第 11 节）：
@@ -113,34 +134,28 @@ export function FeedbackActions({
   }
 
   return (
-    <div style={{ marginTop: 10 }}>
+    <div>
       {feedback ? (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span className={feedback.kind === "interested" ? "badge badge-ok" : "badge"}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={feedback.kind === "interested" ? "success" : "neutral"}>
             {feedback.kind === "interested" ? "已标记感兴趣" : "已标记不感兴趣"}
-          </span>
+          </Badge>
           {feedback.kind === "not_interested" && feedback.reasons.length > 0 ? (
-            <span className="muted">
+            <span className="text-sm text-slate-600">
               原因：{feedback.reasons.map(feedbackReasonLabel).join("、")}
             </span>
           ) : null}
-          <button type="button" className="btn" onClick={withdraw} disabled={busy}>
+          <Button size="sm" onClick={withdraw} disabled={busy}>
             {busy ? "处理中…" : "撤回反馈"}
-          </button>
+          </Button>
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={markInterested}
-            disabled={busy}
-          >
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" size="sm" onClick={markInterested} disabled={busy}>
             感兴趣
-          </button>
-          <button
-            type="button"
-            className="btn"
+          </Button>
+          <Button
+            size="sm"
             onClick={() => {
               setDialogError(null);
               setDialogOpen(true);
@@ -148,10 +163,10 @@ export function FeedbackActions({
             disabled={busy}
           >
             不感兴趣
-          </button>
+          </Button>
         </div>
       )}
-      {error ? <p className="error-text">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
 
       <ConfirmDialog
         open={dialogOpen}
@@ -163,17 +178,18 @@ export function FeedbackActions({
           if (!busy) setDialogOpen(false);
         }}
       >
-        <p className="muted" style={{ marginBottom: 8 }}>
+        <p className="mb-2 text-sm text-slate-600">
           选择原因（可多选），系统会据此调整后续推荐：
         </p>
-        <div style={{ display: "grid", gap: 6 }}>
+        <div className="grid gap-1.5">
           {FEEDBACK_REASONS.map((reason) => (
             <label
               key={reason.value}
-              style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-1 py-0.5 hover:bg-slate-50"
             >
               <input
                 type="checkbox"
+                className="h-4 w-4 accent-indigo-600"
                 checked={reasons.includes(reason.value)}
                 onChange={() => toggleReason(reason.value)}
               />
@@ -181,17 +197,15 @@ export function FeedbackActions({
             </label>
           ))}
         </div>
-        <label className="field" style={{ marginTop: 12 }}>
-          <span>备注（可选）</span>
-          <textarea
-            className="input"
+        <Field label="备注（可选）" className="mt-3">
+          <Textarea
             rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="补充说明，帮助系统更准地调整推荐"
           />
-        </label>
-        {dialogError ? <p className="error-text">{dialogError}</p> : null}
+        </Field>
+        {dialogError ? <p className="mt-2 text-sm text-danger">{dialogError}</p> : null}
       </ConfirmDialog>
     </div>
   );
@@ -201,11 +215,11 @@ export function FeedbackActions({
 function RiskBadge({ risk }: { risk: RiskSignal }) {
   const severity = RISK_SEVERITY_NAMES[(risk.severity ?? "").toLowerCase()];
   return (
-    <span className="badge badge-busy">
+    <Badge tone="warning">
       {riskName(risk)}
       {severity ? `（${severity}风险）` : ""}
       {riskUncertain(risk) ? " · 存在不确定性" : ""}
-    </span>
+    </Badge>
   );
 }
 
@@ -224,44 +238,30 @@ export default function RecommendationCard({ item }: { item: Recommendation }) {
   const firstSeen = item.first_seen_at ?? item.discovered_at ?? item.created_at ?? null;
 
   return (
-    <div className="card">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <Link href={detailHref} className="link">
-            <strong>{recTitle(item)}</strong>
+    <div className="group my-3 rounded-xl border border-slate-200 bg-white p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Link
+            href={detailHref}
+            className="text-base font-semibold text-slate-900 transition-colors group-hover:text-primary"
+          >
+            {recTitle(item)}
           </Link>
-          {isSyntheticSeed(item) ? (
-            <span className="badge" title="该岗位为合成种子数据，仅用于产品演示，非真实在招岗位">
-              合成示例
-            </span>
-          ) : null}
+          {isSyntheticSeed(item) ? <SyntheticBadge /> : null}
         </span>
-        {item.score != null || item.grade ? (
-          <span className={gradeBadgeClass(item.grade)}>
-            {item.score != null ? `${item.score} 分` : ""}
-            {item.grade ? `${item.score != null ? " · " : ""}${gradeName(item.grade)}` : ""}
-          </span>
-        ) : null}
+        <ScoreBadge item={item} />
       </div>
 
-      <p style={{ marginTop: 6, fontSize: 14 }}>
+      <p className="mt-1.5 text-sm text-slate-600">
         {recCompany(item)}
         {" · "}
         {recCity(item)}
         {item.work_mode ? ` · ${workModeLabel(item.work_mode)}` : ""}
         {" · "}
-        {recSalaryText(item)}
+        <span className="font-medium text-slate-700">{recSalaryText(item)}</span>
       </p>
 
-      <p className="muted" style={{ marginTop: 4 }}>
+      <p className="mt-1 text-xs text-slate-400">
         {published ? `发布于 ${fmtTime(published)}` : null}
         {published && firstSeen ? " · " : null}
         {firstSeen ? `发现于 ${fmtTime(firstSeen)}` : null}
@@ -270,38 +270,38 @@ export default function RecommendationCard({ item }: { item: Recommendation }) {
         {!published && !firstSeen && !source ? "发布/来源信息不足" : null}
       </p>
 
-      {matchPoints.length > 0 ? (
-        <p style={{ marginTop: 6, fontSize: 14 }}>匹配：{matchPoints.join(" / ")}</p>
-      ) : null}
-      {keyGap ? (
-        <p style={{ marginTop: 4, fontSize: 14 }}>缺口：{keyGap}</p>
+      {matchPoints.length > 0 || keyGap ? (
+        <div className="mt-3 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+          {matchPoints.length > 0 ? (
+            <p className="text-slate-700">
+              <span className="font-medium text-emerald-700">匹配</span>
+              ：{matchPoints.join(" / ")}
+            </p>
+          ) : null}
+          {keyGap ? (
+            <p className="text-slate-700">
+              <span className="font-medium text-amber-700">缺口</span>
+              ：{keyGap}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {risks.length > 0 ? (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {risks.map((risk, i) => (
             <RiskBadge key={`${risk.code ?? risk.name ?? "risk"}-${i}`} risk={risk} />
           ))}
         </div>
       ) : (
-        <p className="muted" style={{ marginTop: 6 }}>
-          风险：无明显风险信号
-        </p>
+        <p className="mt-2 text-xs text-slate-400">风险：无明显风险信号</p>
       )}
 
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          flexWrap: "wrap",
-          marginTop: 4,
-        }}
-      >
-        <Link href={detailHref} className="btn" style={{ marginTop: 10 }}>
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
+        <Link href={detailHref} className={buttonClasses("secondary", "sm")}>
           查看报告
         </Link>
-        <div style={{ flex: 1 }}>
+        <div className="min-w-0 flex-1">
           <FeedbackActions recommendationId={item.id} initial={parseFeedback(item)} />
         </div>
       </div>
