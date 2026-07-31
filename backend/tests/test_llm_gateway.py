@@ -20,6 +20,7 @@ from app.integrations.llm_gateway import (
     LLMError,
     LLMModelNotAllowedError,
     LLMNotConfiguredError,
+    LLMProviderRejectedError,
     LLMRawResponse,
     LLMRequest,
     LLMSchemaError,
@@ -112,7 +113,8 @@ def test_synthetic_provider_needs_no_consent():
 
 
 def test_deepseek_adapter_without_key_not_configured(monkeypatch):
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    # 置空而非删除：删除会让 backend/.env 里的真实 key 经 env_file 泄入测试
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -153,6 +155,135 @@ def test_retries_exhausted_raises(monkeypatch):
     assert len(adapter.calls) == 3  # 1 + 2 次重试（LLM_MAX_RETRIES=2），不无限重放
 
 
+def test_provider_rejected_not_retried(monkeypatch):
+    """无效 key 类 4xx：立即失败，不重放、不降级合成（P0 失败路径）。"""
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter(
+        [LLMProviderRejectedError("deepseek rejected request: HTTP 401"), _ok()]
+    )
+    with pytest.raises(LLMProviderRejectedError):
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert len(adapter.calls) == 1  # 明确拒绝绝不重试
+
+
+def _fake_deepseek_response(status_code: int, payload: dict | None = None):
+    import httpx
+
+    def _post(url, **kwargs):
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code, request=request, json=payload or {})
+
+    return _post
+
+
+def test_deepseek_adapter_401_maps_to_rejected_without_key_leak(monkeypatch):
+    """真实 Adapter：401 → LLMProviderRejectedError，错误信息不含 key/正文。"""
+    fake_key = "sk-fake-invalid-key-for-test"
+    monkeypatch.setenv("DEEPSEEK_API_KEY", fake_key)
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        adapter = DeepSeekAdapter()
+        assert adapter.configured is True
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.post",
+            _fake_deepseek_response(401, {"error": {"message": "invalid api key"}}),
+        )
+        with pytest.raises(LLMProviderRejectedError) as exc_info:
+            adapter.complete(_request())
+        assert "401" in str(exc_info.value)
+        assert fake_key not in str(exc_info.value)
+        assert "invalid api key" not in str(exc_info.value)  # 响应体不进错误信息
+    finally:
+        get_settings.cache_clear()
+
+
+def test_deepseek_adapter_5xx_stays_retryable(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        adapter = DeepSeekAdapter()
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.post", _fake_deepseek_response(503)
+        )
+        with pytest.raises(LLMError) as exc_info:
+            adapter.complete(_request())
+        assert not isinstance(exc_info.value, LLMProviderRejectedError)
+    finally:
+        get_settings.cache_clear()
+
+
+async def test_probe_runtime(monkeypatch):
+    """运行可用探测（异步）：200 → True；网络失败/非 200 → False；无 key 不发请求。"""
+    import httpx as _httpx
+
+    from app.core.config import get_settings
+
+    def _fake_async_client(get_impl):
+        class _FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc_info):
+                return False
+
+            async def get(self, url, **kwargs):
+                return get_impl(url)
+
+        return _FakeAsyncClient
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-fake-key")
+    get_settings.cache_clear()
+    try:
+        adapter = DeepSeekAdapter()
+
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(
+                lambda url: _httpx.Response(200, request=_httpx.Request("GET", url))
+            ),
+        )
+        assert await adapter.probe_runtime() is True
+
+        def _raise_connect_error(url):
+            raise _httpx.ConnectError("boom")
+
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(_raise_connect_error),
+        )
+        assert await adapter.probe_runtime() is False
+
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(
+                lambda url: _httpx.Response(401, request=_httpx.Request("GET", url))
+            ),
+        )
+        assert await adapter.probe_runtime() is False
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+        get_settings.cache_clear()
+        unconfigured = DeepSeekAdapter()
+
+        def _explode(url):
+            raise AssertionError("未配置时不得发起探测请求")
+
+        monkeypatch.setattr(
+            "app.integrations.llm_gateway.httpx.AsyncClient",
+            _fake_async_client(_explode),
+        )
+        assert await unconfigured.probe_runtime() is False
+    finally:
+        get_settings.cache_clear()
+
+
 # ---------------- Schema 校验：最多一次修复 ----------------
 
 
@@ -169,9 +300,61 @@ def test_schema_repair_once_then_success():
 
 def test_schema_fails_after_one_repair_no_fake_success():
     adapter = FakeAdapter(['{"wrong": 1}', '{"still": "wrong"}', _ok()])
-    with pytest.raises(LLMSchemaError):
+    with pytest.raises(LLMSchemaError) as exc_info:
         ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
     assert len(adapter.calls) == 2  # 修复只允许一次，绝不第三次
+    # P0 实跑暴露的丢账修复：Schema 失败也必须携带真实用量供调用方记账
+    usage = exc_info.value.usage
+    assert usage is not None
+    assert usage.tokens_in == 200 and usage.tokens_out == 100  # 两次调用都计
+    assert usage.attempts == 2 and usage.repaired is True
+    assert usage.amount_estimated > 0  # deepseek 真实扣费不因失败清零
+
+
+def test_repair_call_network_failure_carries_first_call_usage(monkeypatch):
+    """PR#4 review 第 2 条：首次调用成功但 Schema 错误、修复请求网络失败 → 不丢账。
+
+    第一次请求已实际消耗供应商 token；修复请求耗尽重试抛 LLMError 时，
+    异常必须携带第一次的累计用量，供调用方照常写 usage_ledger。
+    """
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter(
+        ['{"wrong": 1}', LLMError("net a"), LLMError("net b"), LLMError("net c")]
+    )
+    with pytest.raises(LLMError) as exc_info:
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert not isinstance(exc_info.value, LLMSchemaError)  # 网络失败，不是 Schema 失败
+    usage = exc_info.value.usage
+    assert usage is not None, "修复请求失败也必须携带已累计用量（丢账路径）"
+    assert usage.tokens_in == 100 and usage.tokens_out == 50  # 只计第一次成功调用
+    assert usage.attempts == 1 and usage.repaired is True
+    assert usage.amount_estimated == pytest.approx(
+        100 / 1_000_000 * 2.0 + 50 / 1_000_000 * 8.0
+    )
+
+
+def test_repair_call_rejected_401_carries_first_call_usage(monkeypatch):
+    """首次成功 + Schema 错误 → 修复请求 401 被供应商拒绝：类型不变、用量必须带上。"""
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter(
+        ['{"wrong": 1}', LLMProviderRejectedError("deepseek rejected request: HTTP 401")]
+    )
+    with pytest.raises(LLMProviderRejectedError) as exc_info:
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert len(adapter.calls) == 2  # 401 不重试
+    usage = exc_info.value.usage
+    assert usage is not None
+    assert usage.tokens_in == 100 and usage.tokens_out == 50
+    assert usage.amount_estimated > 0
+
+
+def test_first_call_failure_has_no_usage_to_carry(monkeypatch):
+    """第一次调用就失败（无任何成功响应）→ 无用量可携带，usage 保持 None。"""
+    monkeypatch.setattr("app.integrations.llm_gateway.time.sleep", lambda *_: None)
+    adapter = FakeAdapter([LLMError("a"), LLMError("b"), LLMError("c")])
+    with pytest.raises(LLMError) as exc_info:
+        ModelGateway(adapter).complete_json(_request(), _Out, consent=ALLOWED)
+    assert exc_info.value.usage is None  # 没消耗过 token，绝不虚增账本
 
 
 # ---------------- 日志边界：正文绝不入日志 ----------------
@@ -290,3 +473,25 @@ def test_extract_input_doc_roundtrip_and_garbage():
     doc = _analysis_input()
     assert extract_input_doc(build_analysis_request(doc).user) == doc
     assert extract_input_doc("没有输入标记") is None
+
+
+def test_prompts_embed_output_json_schema():
+    """P0 实跑回归：prompt 必须内嵌完整输出 JSON Schema。
+
+    v1 只列顶层字段名，真实 DeepSeek 把 resume_suggestions 输出成字符串数组
+    → SCHEMA_INVALID（合成 Adapter 不读 prompt，缺陷一直未暴露）。
+    """
+    from app.tailoring.prompts import build_tailor_request
+
+    analysis_user = build_analysis_request(_analysis_input()).user
+    # 嵌套对象的字段名必须能从 prompt 中找到（模型据此产出对象数组）
+    for field in ("based_on_fact_ids", "profile_fact_ids", "job_span", "uncertainty"):
+        assert field in analysis_user, f"analysis prompt 缺 Schema 字段 {field}"
+
+    tailor_request = build_tailor_request(
+        {"facts": [], "job": {"title": "", "company": "", "description": ""}}
+    )
+    for field in ("fact_ids", "sections", "changes", "reason"):
+        assert field in tailor_request.user, f"tailor prompt 缺 Schema 字段 {field}"
+    # 定制简历输出较长：请求级 max_output_tokens 必须高于默认 2048（防截断坏 JSON）
+    assert (tailor_request.max_output_tokens or 0) >= 4096

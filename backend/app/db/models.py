@@ -1162,6 +1162,12 @@ class JobVector(Base):
             "preprocess_version",
             name="uq_job_vectors_job_model_version",
         ),
+        Index(
+            "ix_job_vectors_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
 
